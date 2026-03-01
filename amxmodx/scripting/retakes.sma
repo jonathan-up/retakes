@@ -233,7 +233,7 @@ public event_round_start()
     if (g_startRetake)
     {
         new players[32], num, numT, numCT, iPlayer;
-        new szNextMap[64];
+        new szNextMap[64] = "N/A";
         get_players(players, num);
 
         set_hudmessage(0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0);
@@ -260,7 +260,10 @@ public event_round_start()
 
         g_fRoundStart = get_gametime();
 
-        get_pcvar_string(g_cvarNextMap, szNextMap, charsmax(szNextMap));
+        if (g_cvarNextMap)
+        {
+            get_pcvar_string(g_cvarNextMap, szNextMap, charsmax(szNextMap));
+        }
 
         g_round++;
         g_roundRestore = true;
@@ -285,7 +288,14 @@ public event_round_start()
 
         if (g_round == get_pcvar_num(g_cvarRounds))
         {
-            server_cmd("changelevel %s", szNextMap);
+            if (g_cvarNextMap && szNextMap[0])
+            {
+                server_cmd("changelevel %s", szNextMap);
+            }
+            else
+            {
+                server_print("[RETAKES] Cvar amx_nextmap not found. Skipping map change.");
+            }
         }
     }
 }
@@ -734,7 +744,7 @@ public client_command(client)
     return PLUGIN_CONTINUE;
 }
 
-public client_disconnect(id)
+public client_disconnected(id)
 {
     if (task_exists(id))
     {
