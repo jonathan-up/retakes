@@ -1,149 +1,42 @@
 /*
-*	___________
-*
-*	R E T A K E S	v1.1
-*	alghtryer.github.io/retakes
-*		
-*	Author: ALGHTRYER 
-*	e: alghtryer@gmail.com w: alghtryer.github.io 	
-*	___________
-*	
-*
-*	The plugin sets up a retake situation in a random site in the map. TT plant bomb and CT have 40 seconds to defuse. 
-*	TT spawned on bombsite( A or B), CT on random spwan depending of where c4 plant(A or B). 
-*		
-*	Features:
-*	- - - - -
-*	- Warm Up for 30 seconds on map start.
-*	- Auto plant Bomb.
-*	- If CT win, team will be swap.
-*	- If TT win 3(cvar) rounds in row, team well be swap.
-*	- Playing 15(cvar) rounds and map change on nextmap.
-*	- c4 Hud timer.
-*	- Buy Time for 5seconds(cvar).
-*	- Unlock/Remove buy zones.
-*	- If bomb don't plant, round will be restarted. Rounds and player money/kill/deats be returned on same.
-*
-*	Spawn
-*	- - - - -
-*	Every map must have spawn for Site A and B. For now i crete 6 CT and 6 T spawn for this map:
-*		- de_dust2, de_inferno, de_mirage, de_train, de_tuscan.
-*
-*	API:
-*	- - -
-*	isRetakes()	// Check if retakes start.
-*	Rounds()	// Check round number.
-*			
-*	Cvars:
-*	- - - - -
-*	retakes_rounds "15"			// How much playing round for one map
-*	retakes_rowwin "3"			// How much T Team can win round in row
-*	retakes_prefix "!g[RETAKES]"		// Prefix in chat message
-*	retakes_autoplant "1"			// Auto Plant Bomb is on/off
-*	retakes_buyzone 1			// Unlock/remove buy zone
-*	retakes_warmup_time "30"		// Warm Up time min=1
-*	retakes_infohud "1"			// Info hud on/off
-*	retakes_buytime "5"			// Buy Time
-*	retakes_swapct "1"			// On/off Swap CT
-*	retakes_swapt "1"			// On/off Swap T
-*	retakes_hudc4timer "1"			// On/off c4 hud timer
-*
-*	Credits:
-*	- - - - -
-* 	- Map Spawns 			// jopmako
-*	- Auto Plant Bomb		// xPaw/Arkashine
-*	- c4 Countdown Timer		// SAMURAI16
-*	- Disable Buy			// Exolent
-*	- Unlock BuyZone		// VEN
-*	
-*	Changelog:
-*	- - - - - -
-*	v1.0 [09. Jan 2020]
-*       	- First release.
-*	v1.1 [22. Jan 2020]
-*		- Added	eight new cvars.
-*		- Added buy zone and disable buy.
-*		- Small bug fixed.
-*		- Added perment hud message for bombsite info.
-*
-*	License:
-*	- - - - 
-*  	Copyright (C) 2020, ALGHTRYER <alghtryer@gmail.com> 
-*
-*  	This program is free software; you can redistribute it and/or
-*  	modify it under the terms of the GNU General Public License
-*  	as published by the Free Software Foundation; either version 2
-*  	of the License, or (at your option) any later version.
-*
-*  	This program is distributed in the hope that it will be useful,
-*  	but WITHOUT ANY WARRANTY; without even the implied warranty of
-*  	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*  	GNU General Public License for more details.
-*
-*  	You should have received a copy of the GNU General Public License
-*  	along with this program; if not, write to the Free Software
-* 	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.	
-*/
+ * ___________
+ *
+ * R E T A K E S v1.2
+ * alghtryer.github.io/retakes
+ *
+ * Author: ALGHTRYER
+ * e: alghtryer@gmail.com w: alghtryer.github.io
+ * ___________
+ *
+ * The plugin sets up a retake situation in a random site in the map. TT plant bomb and CT have 40 seconds to defuse.
+ * TT spawned on bombsite (A or B), CT on random spawn depending of where c4 plant (A or B).
+ *
+ * Features:
+ * - Warm Up for 30 seconds on map start.
+ * - Auto plant Bomb.
+ * - If CT win, team will be swap.
+ * - If TT win 3(cvar) rounds in row, team will be swap.
+ * - Playing 15(cvar) rounds and map change on nextmap.
+ * - c4 Hud timer.
+ * - Buy Time for 5seconds(cvar).
+ * - Unlock/Remove buy zones.
+ * - If bomb don't plant, round will be restarted. Rounds and player money/kill/deaths be returned on same.
+ *
+ * Refactored with ReAPI (replaces cstrike, hamsandwich, fakemeta)
+ * - Requires: amxmodx, reapi, amxmisc, engine
+ */
 
-#include < amxmodx >
-#include < amxmisc >
-#include < engine >
-#include < hamsandwich >
-#include < cstrike >
-#include < fakemeta >
+#include <amxmodx>
+#include <amxmisc>
+#include <engine>
+#include <reapi>
 
+#define PLUGIN "Retakes"
+#define AUTHOR "ALGHTRYER"
+#define VERSION "1.2"
 
-new PLUGIN[]	= "Retakes";		// <alghtryer.github.io/retakes>
-new AUTHOR[]	= "ALGHTRYER"; 		// <alghtryer.github.io>
-new VERSION[]	= "1.1";
-
-#define m_iDeaths 444
-
-new MpFreezetime;
-new MpRoundtime;
-new MpTimelimit;
-new NextMap;
-new RestartRound;
-new MpLimitTeams;
-new MpAutoTeamBalance;
-new Mpc4timer;
-new MpBuyTime
-
-new CvarTTwins;
-new CvarRounds;
-new CvarBuyTime
-new CvarAutoPlant
-new CvarBuyZone
-new CvarWarmUp
-new CvarInfoHud
-new CvarSwapCt
-new CvarSwapT
-new CvarHudc4Timer
-new CvarPrefix;
-new Prefix[ 32 ];
-
-new RoundWin;
-new round;
-
-new c4timer
-new iTime
-
-new SyncMsg;
-new c4SyncMsg;
-new SyncInfoHud;
-
-new bool:BombSite;
-new bool:StartRetake;
-new bool:roundrr;
-new bool:isBombPlanted;
-new bool:isRoundEnd;
-new bool:isRoundRestart;
-new bool:isOnCtWinRound;
-new bool:isOnTeWinRound;
-new bool:isBomb;
-
-new Trie:tBuyCommands;
-new Float:fRoundStart;
+#define TASK_BOMB_TIMER 652450
+#define TASK_BOMB_NOT_PLANT 773
 
 enum _:PlayerData
 {
@@ -152,699 +45,762 @@ enum _:PlayerData
     Player_Money
 }
 
-new ePlayerData[ 33 ][ PlayerData ]
-new bool:SavePlayerData[ 33 ];
+new g_cvarMpFreezetime;
+new g_cvarMpRoundtime;
+new g_cvarMpTimelimit;
+new g_cvarMpLimitTeams;
+new g_cvarMpAutoTeamBalance;
+new g_cvarMpc4timer;
+new g_cvarNextMap;
+new g_cvarRestartRound;
+new g_cvarMpBuyTime;
 
-new msgStatusIcon;
+new g_cvarTTwins;
+new g_cvarRounds;
+new g_cvarBuyTime;
+new g_cvarAutoPlant;
+new g_cvarBuyZone;
+new g_cvarWarmUp;
+new g_cvarInfoHud;
+new g_cvarSwapCt;
+new g_cvarSwapT;
+new g_cvarHudc4Timer;
+new g_cvarPrefix;
+new g_prefix[32];
 
-public plugin_precache( ) 
+new g_roundWin;
+new g_round;
+
+new g_c4timer;
+new g_warmupTime;
+
+new g_syncMsg;
+new g_c4SyncMsg;
+new g_syncInfoHud;
+
+new bool:g_bombSite;
+new bool:g_startRetake;
+new bool:g_roundRestore;
+new bool:g_isBombPlanted;
+new bool:g_isRoundEnd;
+new bool:g_isRoundRestart;
+new bool:g_onCtWinRound;
+new bool:g_onTeWinRound;
+new bool:g_isBomb;
+
+new Trie:g_tBuyCommands;
+new Float:g_fRoundStart;
+
+new g_ePlayerData[33][PlayerData];
+new bool:g_savePlayerData[33];
+
+new g_msgStatusIcon;
+
+public plugin_precache()
 {
-	ReadSpawns( 1 );
+    read_spawns(1);
 }
 
-public plugin_init( ) 
+public plugin_init()
 {
+    register_plugin(PLUGIN, VERSION, AUTHOR);
+    register_cvar("retakes_version", VERSION, FCVAR_SERVER|FCVAR_UNLOGGED);
 
-	register_plugin
-	(
-		PLUGIN,		//: RETAKES <alghtryer.github.io/retakes>
-		VERSION,	//: 1.1
-		AUTHOR		//: ALGHTRYER <alghtryer.github.io>
-	);
+    register_event("SendAudio", "event_end_round", "a", "2&%!MRAD_terwin", "2&%!MRAD_ctwin", "2&%!MRAD_rounddraw");
+    register_event("TextMsg", "event_restart_game", "a", "2&#Game_C", "2&#Game_w");
+    register_event("SendAudio", "event_on_ct_win", "a", "2&%!MRAD_ctwin");
+    register_event("SendAudio", "event_on_te_win", "a", "2&%!MRAD_terwin");
+    register_event("HLTV", "event_round_start", "a", "1=0", "2=0");
+    register_event("ResetHUD", "event_draw_buyzone_icon", "be");
 
-	register_cvar( "retakes_version", VERSION, FCVAR_SERVER|FCVAR_UNLOGGED );
+    register_logevent("log_msg_plant_bomb", 3, "2=Spawned_With_The_Bomb");
+    register_logevent("log_bomb_planted", 3, "2=Planted_The_Bomb");
+    register_logevent("log_bomb_defused", 3, "2=Defused_The_Bomb");
+    register_logevent("log_bomb_explode", 6, "3=Target_Bombed");
+    register_logevent("log_when_round_start", 2, "1=Round_Start");
 
+    register_message(get_user_msgid("StatusIcon"), "msg_status_icon");
 
-	register_event( "SendAudio",	"EndRound",	"a", "2&%!MRAD_terwin", "2&%!MRAD_ctwin", "2&%!MRAD_rounddraw" );
-	register_event( "TextMsg", "RestartGame", "a", "2&#Game_C","2&#Game_w" );
-	register_event( "SendAudio", "OnCtWinRound", "a", "2&%!MRAD_ctwin" );
-	register_event( "SendAudio", "OnTeWinRound", "a", "2&%!MRAD_terwin" );
-	register_event( "HLTV", "RoundStart", "a", "1=0", "2=0" );
-	register_event( "ResetHUD", "DrawBuyZoneIcon", "be" )
+    RegisterHookChain(RG_CBasePlayer_Spawn, "hook_player_spawn", .post = true);
+    RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "hook_drop_player_item", .post = false);
 
-	register_logevent( "MsgPlantBomb", 3, "2=Spawned_With_The_Bomb" )
-	register_logevent( "bomb_planted" , 3, "2=Planted_The_Bomb" );
-	register_logevent( "bomb_defused" , 3, "2=Defused_The_Bomb" );
-	register_logevent( "bomb_explode" , 6, "3=Target_Bombed" );
-	register_logevent( "WhenRoundStart", 2, "1=Round_Start" )
+    g_msgStatusIcon = get_user_msgid("StatusIcon");
 
-	register_message( get_user_msgid( "StatusIcon" ), "Message_StatusIcon" );
+    g_cvarMpFreezetime = get_cvar_pointer("mp_freezetime");
+    g_cvarMpRoundtime = get_cvar_pointer("mp_roundtime");
+    g_cvarMpTimelimit = get_cvar_pointer("mp_timelimit");
+    g_cvarMpLimitTeams = get_cvar_pointer("mp_limitteams");
+    g_cvarMpAutoTeamBalance = get_cvar_pointer("mp_autoteambalance");
+    g_cvarRestartRound = get_cvar_pointer("sv_restartround");
+    g_cvarMpBuyTime = get_cvar_pointer("mp_buytime");
+    g_cvarMpc4timer = get_cvar_pointer("mp_c4timer");
+    g_cvarNextMap = get_cvar_pointer("amx_nextmap");
 
-	RegisterHam( Ham_Spawn, "player", "OnPlayerSpawn", 1 ) 
-	RegisterHam( Ham_CS_Item_CanDrop, "weapon_c4", "DisableC4Drop" );
+    g_cvarRounds = register_cvar("retakes_rounds", "15");
+    g_cvarTTwins = register_cvar("retakes_rowwin", "3");
+    g_cvarPrefix = register_cvar("retakes_prefix", "!g[RETAKES]");
+    g_cvarAutoPlant = register_cvar("retakes_autoplant", "1");
+    g_cvarBuyZone = register_cvar("retakes_buyzone", "1");
+    g_cvarWarmUp = register_cvar("retakes_warmup_time", "30");
+    g_cvarInfoHud = register_cvar("retakes_infohud", "1");
+    g_cvarBuyTime = register_cvar("retakes_buytime", "5");
+    g_cvarSwapCt = register_cvar("retakes_swapct", "1");
+    g_cvarSwapT = register_cvar("retakes_swapt", "1");
+    g_cvarHudc4Timer = register_cvar("retakes_hudc4timer", "1");
 
-	msgStatusIcon 			= get_user_msgid( "StatusIcon" ) 
+    get_pcvar_string(g_cvarPrefix, g_prefix, charsmax(g_prefix));
 
-	MpFreezetime			= get_cvar_pointer( "mp_freezetime" )
-	MpRoundtime			= get_cvar_pointer( "mp_roundtime" );
-	MpTimelimit			= get_cvar_pointer( "mp_timelimit" );
-	MpLimitTeams			= get_cvar_pointer( "mp_limitteams" );
-	MpAutoTeamBalance		= get_cvar_pointer( "mp_autoteambalance" );
-	RestartRound 			= get_cvar_pointer( "sv_restartround" );
-	MpBuyTime 			= get_cvar_pointer( "mp_buytime" );
-	Mpc4timer			= get_cvar_pointer( "mp_c4timer" );
-	NextMap				= get_cvar_pointer( "amx_nextmap" );
+    g_syncMsg = CreateHudSyncObj();
+    g_c4SyncMsg = CreateHudSyncObj();
+    g_syncInfoHud = CreateHudSyncObj();
 
-	CvarRounds			= register_cvar( "retakes_rounds","15" );
-	CvarTTwins 			= register_cvar( "retakes_rowwin","3" );
-	CvarPrefix 			= register_cvar( "retakes_prefix", "!g[RETAKES]" );
-	CvarAutoPlant			= register_cvar( "retakes_autoplant","1" );
-	CvarBuyZone			= register_cvar( "retakes_buyzone","1" );
-	CvarWarmUp			= register_cvar( "retakes_warmup_time","30" );
-	CvarInfoHud			= register_cvar( "retakes_infohud","1" );
-	CvarBuyTime 			= register_cvar( "retakes_buytime", "5" );
-	CvarSwapCt			= register_cvar( "retakes_swapct", "1" );
-	CvarSwapT			= register_cvar( "retakes_swapt", "1" );
-	CvarHudc4Timer			= register_cvar( "retakes_hudc4timer", "1" );
+    register_clcmd("fullupdate", "clcmd_fullupdate");
 
-	get_pcvar_string( CvarPrefix, Prefix, charsmax( Prefix ) );
+    new const szBuyCommands[][] =
+    {
+        "usp", "glock", "deagle", "p228", "elites",
+        "fn57", "m3", "xm1014", "mp5", "tmp", "p90",
+        "mac10", "ump45", "ak47", "galil", "famas",
+        "sg552", "m4a1", "aug", "scout", "awp", "g3sg1",
+        "sg550", "m249", "vest", "vesthelm", "flash",
+        "hegren", "sgren", "defuser", "nvgs", "shield",
+        "primammo", "secammo", "km45", "9x19mm", "nighthawk",
+        "228compact", "fiveseven", "12gauge", "autoshotgun",
+        "mp", "c90", "cv47", "defender", "clarion", "krieg552",
+        "bullpup", "magnum", "d3au1", "krieg550",
+        "buy", "buyammo1", "buyammo2", "buyequip", "cl_autobuy",
+        "cl_rebuy", "cl_setautobuy", "cl_setrebuy"
+    };
 
-	SyncMsg				= CreateHudSyncObj( );
-	c4SyncMsg			= CreateHudSyncObj( );
-	SyncInfoHud			= CreateHudSyncObj( );
-
-	register_clcmd("fullupdate", "clcmd_fullupdate")
-
-	new const szBuyCommands[ ][ ] =
-   	 {
-		"usp", "glock", "deagle", "p228", "elites",
-		"fn57", "m3", "xm1014", "mp5", "tmp", "p90",
-		"mac10", "ump45", "ak47", "galil", "famas",
-		"sg552", "m4a1", "aug", "scout", "awp", "g3sg1",
-		"sg550", "m249", "vest", "vesthelm", "flash",
-		"hegren", "sgren", "defuser", "nvgs", "shield",
-		"primammo", "secammo", "km45", "9x19mm", "nighthawk",
-		"228compact", "fiveseven", "12gauge", "autoshotgun",
-		"mp", "c90", "cv47", "defender", "clarion", "krieg552",
-		"bullpup", "magnum", "d3au1", "krieg550", 
-		"buy", "buyammo1", "buyammo2", "buyequip", "cl_autobuy",
-		"cl_rebuy", "cl_setautobuy", "cl_setrebuy"
-    	}
-    
-	tBuyCommands = TrieCreate( );
-    	for( new i = 0; i < sizeof( szBuyCommands ); i++ )
-	{
-		TrieSetCell( tBuyCommands, szBuyCommands[ i ], i );
-	}
-
+    g_tBuyCommands = TrieCreate();
+    for (new i = 0; i < sizeof(szBuyCommands); i++)
+    {
+        TrieSetCell(g_tBuyCommands, szBuyCommands[i], i);
+    }
 }
-public plugin_cfg( ) 
-{ 
-	set_pcvar_float( MpRoundtime, 1.00 );
-	set_pcvar_num( MpTimelimit, 0 );
-	set_pcvar_num( MpLimitTeams, 5 );
-	set_pcvar_num( MpAutoTeamBalance, 1 );
-	set_pcvar_num( Mpc4timer, 40 );
-	set_pcvar_float( MpBuyTime, 1.5 );
 
-
-	if( get_pcvar_num( CvarBuyZone ) )
-	{ 
-		UnlockBuyZone( )
-		set_pcvar_num( MpFreezetime, 5 );
-	}
-	else
-		set_pcvar_num( MpFreezetime, 1 );
-
-	if( get_pcvar_num( CvarInfoHud ) )
-		set_task( 1.0, "InfoHud", _, _, _, "b" );
-
-	iTime = get_pcvar_num( CvarWarmUp )
-	set_task( 1.0, "ShowCountdown", .flags = "a", .repeat = iTime );
-} 
-public plugin_natives( )
+public plugin_cfg()
 {
-	register_library( "retakes" );
-	
-	register_native( "isRetakes","_retakes" );
-	register_native( "Rounds","_rounds" );
+    set_pcvar_float(g_cvarMpRoundtime, 1.00);
+    set_pcvar_num(g_cvarMpTimelimit, 0);
+    set_pcvar_num(g_cvarMpLimitTeams, 5);
+    set_pcvar_num(g_cvarMpAutoTeamBalance, 1);
+    set_pcvar_num(g_cvarMpc4timer, 40);
+    set_pcvar_float(g_cvarMpBuyTime, 1.5);
+
+    if (get_pcvar_num(g_cvarBuyZone))
+    {
+        unlock_buyzone();
+        set_pcvar_num(g_cvarMpFreezetime, 5);
+    }
+    else
+    {
+        set_pcvar_num(g_cvarMpFreezetime, 1);
+    }
+
+    if (get_pcvar_num(g_cvarInfoHud))
+    {
+        set_task(1.0, "task_info_hud", _, _, _, "b");
+    }
+
+    g_warmupTime = get_pcvar_num(g_cvarWarmUp);
+    set_task(1.0, "task_show_countdown", .flags = "a", .repeat = g_warmupTime);
 }
-public bool:_retakes( plugin, params )
+
+public plugin_natives()
 {
-	return StartRetake;
+    register_library("retakes");
+    register_native("isRetakes", "native_is_retakes");
+    register_native("Rounds", "native_rounds");
 }
-public _rounds( plugin, params )
+
+public native_is_retakes(plugin, params)
 {
-	return round;
+    return g_startRetake;
 }
-public RoundStart( )
+
+public native_rounds(plugin, params)
 {
-	c4timer = -1;
-	remove_task( 652450 );
-	isBombPlanted = false;
-	
-	if(StartRetake){
-		new players[ 32 ] , num , numT, numCT, iPlayer;
-		new szNextMap[ 64 ]; 
-		get_players( players , num );
-
-		set_hudmessage( 0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0 );
-
-		for( new i = 0 ; i < num ; i++ )
-		{
-			iPlayer = players[ i ];
-			new CsTeams:iTeam = cs_get_user_team( iPlayer );
-
-
-			switch ( iTeam )
-			{
-				case CS_TEAM_T: 
-				{ 
-					numT++; 
-					ShowSyncHudMsg( iPlayer, SyncMsg, "Defend Bombsite: %s", BombSite ? "B" : "A" ); 
-				}
-				case CS_TEAM_CT: 
-				{ 
-					numCT++; 
-					ShowSyncHudMsg( iPlayer, SyncMsg, "Retake Bombsite: %s", BombSite ? "B" : "A" ); 
-				}
-			}
-
-		}
-		
-		fRoundStart = get_gametime( );
-		
-        	get_pcvar_string( NextMap, szNextMap, charsmax( szNextMap ) );
-
-		round++
-		roundrr = true;
-		
-		isRoundEnd = true;
-		isRoundRestart = true;
-		isOnCtWinRound = true;
-		isOnTeWinRound = true;
-		
-		if( get_pcvar_num( CvarAutoPlant ) == 0 )
-			isBomb = true;
-
-		ClientPrintColor( 0, "%s Retake %s : %d Ts vs %d CTs", Prefix, BombSite ? "B" : "A", numT,numCT );
-		ClientPrintColor( 0, "%s Round: %d/%d | Next Map: %s", Prefix, round, get_pcvar_num( CvarRounds ), szNextMap );
-
-		if( get_pcvar_num( CvarBuyZone ) )
-			ClientPrintColor( 0, "%s You have %d seconds for buy!", Prefix , get_pcvar_num( CvarBuyTime ) );
-
-		if( round == get_pcvar_num( CvarRounds ) )
-			server_cmd( "changelevel %s", szNextMap );
-	}
-} 
-public WhenRoundStart( )
-{
-	if( StartRetake )
-	{
-		if( task_exists( 773 ) )
-		{
-			remove_task( 773 );
-		}	
-		set_task( 10.0, "BombNotPlant", 773 );
-	}		
+    return g_round;
 }
-public InfoHud( )
+
+public event_round_start()
 {
-	if( StartRetake )
-	{
-		set_hudmessage( 0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1 );
-		ShowSyncHudMsg( 0, SyncInfoHud, "Bombsite : %s", BombSite ? "B" : "A" );
-	}
+    g_c4timer = -1;
+    remove_task(TASK_BOMB_TIMER);
+    g_isBombPlanted = false;
+
+    if (g_startRetake)
+    {
+        new players[32], num, numT, numCT, iPlayer;
+        new szNextMap[64];
+        get_players(players, num);
+
+        set_hudmessage(0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0);
+
+        for (new i = 0; i < num; i++)
+        {
+            iPlayer = players[i];
+            new TeamName:team = get_member(iPlayer, m_iTeam);
+
+            switch (team)
+            {
+                case TEAM_TERRORIST:
+                {
+                    numT++;
+                    ShowSyncHudMsg(iPlayer, g_syncMsg, "Defend Bombsite: %s", g_bombSite ? "B" : "A");
+                }
+                case TEAM_CT:
+                {
+                    numCT++;
+                    ShowSyncHudMsg(iPlayer, g_syncMsg, "Retake Bombsite: %s", g_bombSite ? "B" : "A");
+                }
+            }
+        }
+
+        g_fRoundStart = get_gametime();
+
+        get_pcvar_string(g_cvarNextMap, szNextMap, charsmax(szNextMap));
+
+        g_round++;
+        g_roundRestore = true;
+
+        g_isRoundEnd = true;
+        g_isRoundRestart = true;
+        g_onCtWinRound = true;
+        g_onTeWinRound = true;
+
+        if (get_pcvar_num(g_cvarAutoPlant) == 0)
+        {
+            g_isBomb = true;
+        }
+
+        ClientPrintColor(0, "%s Retake %s : %d Ts vs %d CTs", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
+        ClientPrintColor(0, "%s Round: %d/%d | Next Map: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
+
+        if (get_pcvar_num(g_cvarBuyZone))
+        {
+            ClientPrintColor(0, "%s You have %d seconds for buy!", g_prefix, get_pcvar_num(g_cvarBuyTime));
+        }
+
+        if (g_round == get_pcvar_num(g_cvarRounds))
+        {
+            server_cmd("changelevel %s", szNextMap);
+        }
+    }
 }
-public BombNotPlant( )
-{
-	if( !isBombPlanted )
-		set_pcvar_num( RestartRound, 1 );
 
-	if( task_exists( 773 ) )
-	{
-		remove_task( 773 );
-	}
-}	
-public ShowCountdown( )
+public log_when_round_start()
 {
-	client_print( 0, print_center, "Retake start for : %d", iTime-- );  
-
-	if( iTime <= 0 )
-    	{
-		StartRetake = true;
-		set_pcvar_num( RestartRound, 1 );
-	}
+    if (g_startRetake)
+    {
+        if (task_exists(TASK_BOMB_NOT_PLANT))
+        {
+            remove_task(TASK_BOMB_NOT_PLANT);
+        }
+        set_task(10.0, "task_bomb_not_plant", TASK_BOMB_NOT_PLANT);
+    }
 }
-public EndRound( )
+
+public task_info_hud()
 {
-
-	c4timer = -1;
-	remove_task( 652450 );
-
-	if( !isRoundEnd ) return;
-	
-	if( StartRetake )
-	{
-		if( BombSite )
-			BombSite = false;
-		else
-			BombSite = true;
-		
-		ReadSpawns( 0 );
-		
-		isRoundEnd = false;
-	}
-} 
-
-public RestartGame( )
-{
-	if( task_exists( 773 ) )
-	{
-		remove_task( 773 );
-	}
-
-	c4timer = -1;
-	remove_task( 652450 );
-
-	if( !isRoundRestart ) return;
-
-	if( StartRetake )
-	{
-		if( roundrr )
-		{
-			round--
-			roundrr = false;
-		}
-		
-		new iPlayers[ 32 ], iNum, i, Players;
-		get_players( iPlayers, iNum );
-
-		for( i = 0; i < iNum; i++ )
-		{
-			Players = iPlayers[ i ];
-
-			SavePlayerData[ Players ] = true;
-		}
-
-		isRoundRestart = false;
-	}
-	
+    if (g_startRetake)
+    {
+        set_hudmessage(0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1);
+        ShowSyncHudMsg(0, g_syncInfoHud, "Bombsite : %s", g_bombSite ? "B" : "A");
+    }
 }
-public OnCtWinRound( )
+
+public task_bomb_not_plant()
 {
-	if( !isOnCtWinRound ) return;
+    if (!g_isBombPlanted)
+    {
+        set_pcvar_num(g_cvarRestartRound, 1);
+    }
 
-	if( StartRetake && get_pcvar_num( CvarSwapCt ) )
-	{
-		RoundWin = 0;
-		SwapTeams( )
-		ClientPrintColor( 0, "%s CT win. Swapping Teams!", Prefix );
-
-		isOnCtWinRound = false;
-	}
+    if (task_exists(TASK_BOMB_NOT_PLANT))
+    {
+        remove_task(TASK_BOMB_NOT_PLANT);
+    }
 }
-public OnTeWinRound( )
-{
-	if( !isOnTeWinRound ) return;
 
-	if( StartRetake && get_pcvar_num( CvarSwapT ) )
-	{
-		RoundWin++
-		if( RoundWin == get_pcvar_num( CvarTTwins ) )
-		{
-			SwapTeams( )
-			ClientPrintColor( 0, "%s TT win %d in a row. Swapping Teams!", Prefix, RoundWin );
-			RoundWin = 0;
-		}
-		
-		isOnTeWinRound = false;
-	}
+public task_show_countdown()
+{
+    client_print(0, print_center, "Retake start for : %d", g_warmupTime--);
+
+    if (g_warmupTime <= 0)
+    {
+        g_startRetake = true;
+        set_pcvar_num(g_cvarRestartRound, 1);
+    }
 }
-stock SwapTeams()
+
+public event_end_round()
 {
-	new iPlayers[ 32 ], iNum, iPlayer;
-	get_players( iPlayers, iNum );
-		
-	for ( new a = 0; a < iNum; a++ )
-	{
-		iPlayer = iPlayers[ a ];
-			
-		switch ( cs_get_user_team( iPlayer ) )
-		{
-			case CS_TEAM_T: cs_set_user_team( iPlayer, CS_TEAM_CT );
-			case CS_TEAM_CT: cs_set_user_team( iPlayer, CS_TEAM_T );
-		}
-	}
+    g_c4timer = -1;
+    remove_task(TASK_BOMB_TIMER);
+
+    if (!g_isRoundEnd)
+    {
+        return;
+    }
+
+    if (g_startRetake)
+    {
+        g_bombSite = !g_bombSite;
+        read_spawns(0);
+        g_isRoundEnd = false;
+    }
 }
-stock ReadSpawns( type )
-{
-	new szMap[ 32 ], szConfigdir[ 128 ], szMapFile[ 256 ];
 
-	get_configsdir( szConfigdir, charsmax( szConfigdir ) ); 
-	get_mapname( szMap, charsmax( szMap ) );
-	
-	if( BombSite )
-		formatex( szMapFile, charsmax( szMapFile ), "%s/retakes/%s.spawns_b.cfg", szConfigdir, szMap );
-	else
-		formatex( szMapFile, charsmax( szMapFile ), "%s/retakes/%s.spawns_a.cfg", szConfigdir, szMap );
-	
-	if ( file_exists( szMapFile ) )
-	{
-		
-		new ent_T, ent_CT;
-		new Data[ 128 ], len, line = 0;
-		new team[ 8 ], p_origin[ 3 ][ 8 ], p_angles[ 3 ][ 8 ];
-		new Float:origin[ 3 ], Float:angles[ 3 ];
-		
-		while( ( line = read_file( szMapFile, line , Data , 127 , len) ) != 0 ) 
-		{
-			if ( strlen( Data ) <2 ) continue;
-			
-			parse( Data, team, 7, p_origin[ 0 ], 7, p_origin[ 1 ], 7, p_origin[ 2 ], 7, p_angles[ 0 ], 7, p_angles[ 1 ], 7, p_angles[ 2 ], 7 );
-			
-			origin[ 0 ] = str_to_float(p_origin[ 0 ]); origin[ 1 ] = str_to_float(p_origin[ 1 ] ); origin[ 2 ] = str_to_float( p_origin[ 2 ] );
-			angles[ 0 ] = str_to_float(p_angles[ 0 ]); angles[ 1 ] = str_to_float(p_angles[ 1 ] ); angles[ 2 ] = str_to_float(p_angles[ 2 ] );
-			
-			if ( equali( team, "T" ) )
-			{
-				if ( type==1 ) ent_T = create_entity( "info_player_deathmatch" );
-				else ent_T = find_ent_by_class( ent_T, "info_player_deathmatch" );
-				if ( ent_T > 0 )
-				{
-					entity_set_int( ent_T, EV_INT_iuser1, 1 ); 
-					entity_set_origin( ent_T, origin );
-					entity_set_vector( ent_T, EV_VEC_angles, angles );
-				}
-			}
-			else if (equali( team, "CT" ) )
-			{
-				if ( type==1 ) ent_CT = create_entity( "info_player_start" );
-				else ent_CT = find_ent_by_class( ent_CT, "info_player_start" );
-				if ( ent_CT > 0 )
-				{
-					entity_set_int( ent_CT, EV_INT_iuser1,1 ); 
-					entity_set_origin( ent_CT, origin );
-					entity_set_vector( ent_CT, EV_VEC_angles, angles );
-				}
-			}
-		}
-		return 1;
-	}
-	return 0;
+public event_restart_game()
+{
+    if (task_exists(TASK_BOMB_NOT_PLANT))
+    {
+        remove_task(TASK_BOMB_NOT_PLANT);
+    }
+
+    g_c4timer = -1;
+    remove_task(TASK_BOMB_TIMER);
+
+    if (!g_isRoundRestart)
+    {
+        return;
+    }
+
+    if (g_startRetake)
+    {
+        if (g_roundRestore)
+        {
+            g_round--;
+            g_roundRestore = false;
+        }
+
+        new iPlayers[32], iNum;
+        get_players(iPlayers, iNum);
+
+        for (new i = 0; i < iNum; i++)
+        {
+            g_savePlayerData[iPlayers[i]] = true;
+        }
+
+        g_isRoundRestart = false;
+    }
 }
-public pfn_keyvalue( entid )
-{  
-	new classname[ 32 ], key[ 32 ], value[ 32 ]
-	copy_keyvalue( classname, 31, key, 31, value, 31 )
-		
-	if ( equal ( classname, "info_player_deathmatch" ) || equal( classname, "info_player_start" ) )
-	{
-		if ( is_valid_ent ( entid ) && entity_get_int ( entid,EV_INT_iuser1 ) !=1 ) 
-			remove_entity( entid )
-	}
 
-	return PLUGIN_CONTINUE
+public event_on_ct_win()
+{
+    if (!g_onCtWinRound)
+    {
+        return;
+    }
+
+    if (g_startRetake && get_pcvar_num(g_cvarSwapCt))
+    {
+        g_roundWin = 0;
+        swap_teams();
+        ClientPrintColor(0, "%s CT win. Swapping Teams!", g_prefix);
+        g_onCtWinRound = false;
+    }
 }
-public OnPlayerSpawn( id ) 
-{
-	if ( is_user_alive( id ) ) 
-	{
-		if( StartRetake )
-		{
-			if( task_exists( id ) )
-			{
-				remove_task( id );
-			}
 
-			if( get_pcvar_num( CvarAutoPlant ) )
-				set_task( get_pcvar_float(MpFreezetime), "c4strip", id )
-			
+public event_on_te_win()
+{
+    if (!g_onTeWinRound)
+    {
+        return;
+    }
 
-			if( SavePlayerData[ id ] )
-			{
-				ExecuteHam(Ham_AddPoints, id, ePlayerData[ id ][ Player_Kills ], true )
-				set_pdata_int(id, m_iDeaths, ePlayerData[ id ][ Player_Deaths ] )
-				cs_set_user_money(id, ePlayerData[ id ][ Player_Money ] )
-				SavePlayerData[ id ] = false;
-			}
-			else
-			{
-				ePlayerData[ id ][ Player_Kills ] = get_user_frags( id );
-				ePlayerData[ id ][ Player_Deaths ] = get_user_deaths( id );
-				ePlayerData[ id ][ Player_Money ] = cs_get_user_money( id );
-			}
-		
-		}
-		
-	}
-} 
-public DrawBuyZoneIcon( id )
-{
-	if ( is_user_alive( id ) && get_pcvar_num( CvarBuyZone ) ) 
-	{
-		message_begin( MSG_ONE, msgStatusIcon, _, id )
-		write_byte( 1<<0 )
-		write_string( "buyzone" )
-		write_byte( 0 )
-		write_byte( 160 )
-		write_byte( 0 )
-		message_end( )
-	}
-} 
-public clcmd_fullupdate( ) 
-{
-	return PLUGIN_HANDLED
+    if (g_startRetake && get_pcvar_num(g_cvarSwapT))
+    {
+        g_roundWin++;
+        if (g_roundWin == get_pcvar_num(g_cvarTTwins))
+        {
+            swap_teams();
+            ClientPrintColor(0, "%s TT win %d in a row. Swapping Teams!", g_prefix, g_roundWin);
+            g_roundWin = 0;
+        }
+        g_onTeWinRound = false;
+    }
 }
-public c4strip( id ) 
+
+stock swap_teams()
 {
-	if (is_user_alive( id ) ) 
-	{
-		if( user_has_weapon( id, CSW_C4 ) )
-		{
-			cs_set_user_plant( id,0,0 );
-			cs_set_user_bpammo( id, CSW_C4,0 );
-			BombPlant( id );
-		}
-	}
+    new iPlayers[32], iNum;
+    get_players(iPlayers, iNum);
+
+    for (new i = 0; i < iNum; i++)
+    {
+        new iPlayer = iPlayers[i];
+        new TeamName:team = get_member(iPlayer, m_iTeam);
+
+        switch (team)
+        {
+            case TEAM_TERRORIST:
+                rg_set_user_team(iPlayer, TEAM_CT);
+            case TEAM_CT:
+                rg_set_user_team(iPlayer, TEAM_TERRORIST);
+        }
+    }
 }
-public BombPlant( player ) {
-	new iEntity = create_entity( "weapon_c4" );
-	
-	if( !iEntity )
-		return;
-	
-	DispatchKeyValue( iEntity, "detonatedelay", "0" );
-	DispatchSpawn( iEntity );
-	
-	new Float:origin[ 3 ];
-	pev( player, pev_origin, origin );
 
-	origin[ 0 ] += 30.0 
-	
-	engfunc( EngFunc_SetOrigin, iEntity, origin );
-	
-	client_print( 0, print_center, "#Cstrike_TitlesTXT_Bomb_Planted" );
-	client_cmd( 0, "spk sound/radio/bombpl.wav" );
+stock read_spawns(type)
+{
+    new szMap[32], szConfigDir[128], szMapFile[256];
 
-	force_use( iEntity, iEntity ); 
+    get_configsdir(szConfigDir, charsmax(szConfigDir));
+    get_mapname(szMap, charsmax(szMap));
 
-	message_begin( MSG_SPEC, SVC_DIRECTOR );
-        write_byte( 9 );    
-        write_byte( DRC_CMD_EVENT ); 
-        write_short( player );
-        write_short( 0 );
-        write_long( 11 | DRC_FLAG_FACEPLAYER );  
+    if (g_bombSite)
+        formatex(szMapFile, charsmax(szMapFile), "%s/retakes/%s.spawns_b.cfg", szConfigDir, szMap);
+    else
+        formatex(szMapFile, charsmax(szMapFile), "%s/retakes/%s.spawns_a.cfg", szConfigDir, szMap);
+
+    if (!file_exists(szMapFile))
+    {
+        return 0;
+    }
+
+    new ent_T, ent_CT;
+    new Data[128], len, line = 0;
+    new team[8], p_origin[3][8], p_angles[3][8];
+    new Float:origin[3], Float:angles[3];
+
+    while ((line = read_file(szMapFile, line, Data, 127, len)) != 0)
+    {
+        if (strlen(Data) < 2)
+            continue;
+
+        parse(Data, team, 7, p_origin[0], 7, p_origin[1], 7, p_origin[2], 7, p_angles[0], 7, p_angles[1], 7, p_angles[2], 7);
+
+        origin[0] = str_to_float(p_origin[0]);
+        origin[1] = str_to_float(p_origin[1]);
+        origin[2] = str_to_float(p_origin[2]);
+        angles[0] = str_to_float(p_angles[0]);
+        angles[1] = str_to_float(p_angles[1]);
+        angles[2] = str_to_float(p_angles[2]);
+
+        if (equali(team, "T"))
+        {
+            if (type == 1)
+                ent_T = create_entity("info_player_deathmatch");
+            else
+                ent_T = find_ent_by_class(ent_T, "info_player_deathmatch");
+
+            if (ent_T > 0)
+            {
+                set_entvar(ent_T, var_iuser1, 1);
+                set_entvar(ent_T, var_origin, origin);
+                set_entvar(ent_T, var_angles, angles);
+            }
+        }
+        else if (equali(team, "CT"))
+        {
+            if (type == 1)
+                ent_CT = create_entity("info_player_start");
+            else
+                ent_CT = find_ent_by_class(ent_CT, "info_player_start");
+
+            if (ent_CT > 0)
+            {
+                set_entvar(ent_CT, var_iuser1, 1);
+                set_entvar(ent_CT, var_origin, origin);
+                set_entvar(ent_CT, var_angles, angles);
+            }
+        }
+    }
+    return 1;
+}
+
+public pfn_keyvalue(entid)
+{
+    new classname[32], key[32], value[32];
+    copy_keyvalue(classname, 31, key, 31, value, 31);
+
+    if (equal(classname, "info_player_deathmatch") || equal(classname, "info_player_start"))
+    {
+        if (is_valid_ent(entid) && get_entvar(entid, var_iuser1) != 1)
+            remove_entity(entid);
+    }
+
+    return PLUGIN_CONTINUE;
+}
+
+public hook_player_spawn(const id)
+{
+    if (!is_user_alive(id))
+    {
+        return HC_CONTINUE;
+    }
+
+    if (g_startRetake)
+    {
+        if (task_exists(id))
+        {
+            remove_task(id);
+        }
+
+        if (get_pcvar_num(g_cvarAutoPlant))
+        {
+            set_task(get_pcvar_float(g_cvarMpFreezetime), "task_c4_strip", id);
+        }
+
+        if (g_savePlayerData[id])
+        {
+            set_entvar(id, var_frags, g_ePlayerData[id][Player_Kills]);
+            set_member(id, m_iDeaths, g_ePlayerData[id][Player_Deaths]);
+            rg_add_account(id, g_ePlayerData[id][Player_Money], AS_SET);
+            g_savePlayerData[id] = false;
+        }
+        else
+        {
+            g_ePlayerData[id][Player_Kills] = get_user_frags(id);
+            g_ePlayerData[id][Player_Deaths] = get_user_deaths(id);
+            g_ePlayerData[id][Player_Money] = get_member(id, m_iAccount);
+        }
+    }
+
+    return HC_CONTINUE;
+}
+
+public event_draw_buyzone_icon(id)
+{
+    if (is_user_alive(id) && get_pcvar_num(g_cvarBuyZone))
+    {
+        message_begin(MSG_ONE, g_msgStatusIcon, _, id);
+        write_byte(1<<0);
+        write_string("buyzone");
+        write_byte(0);
+        write_byte(160);
+        write_byte(0);
         message_end();
-	
-	static msgBombDrop;
-
-	if ( msgBombDrop || ( msgBombDrop = get_user_msgid( "BombDrop" ) ) )
-	{   
-		#define write_coord_f(%0)  ( engfunc( EngFunc_WriteCoord, %0 ) )
-		
-		message_begin( MSG_ALL, msgBombDrop );
-		write_coord_f( origin[ 0 ] );
-		write_coord_f( origin[ 1 ] );
-		write_coord_f( origin[ 2 ] );
-		write_byte( 1 );
-		message_end();
-	}
-	
-	isBombPlanted= true;
-
-	if( get_pcvar_num( CvarHudc4Timer ) )
-	{
-		c4timer = get_pcvar_num( Mpc4timer );
-		dispTime( )
-		set_task( 1.0, "dispTime", 652450, "", 0, "b" );
-	} 
-} 
-public MsgPlantBomb( )
-{
-	if( get_pcvar_num( CvarAutoPlant ) ) return;
-
-	if( StartRetake )
-	{
-		new szLogUser[80], szName[32]
-		read_logargv(0, szLogUser, charsmax(szLogUser))
-		parse_loguser(szLogUser, szName, charsmax(szName))
-
-		new id = get_user_index(szName)
-
-		if( user_has_weapon( id, CSW_C4 ) )
-		{
-			engclient_cmd( id, "weapon_c4" );
-			client_print( id, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!" );
-			ClientPrintColor( id, "%s PLANT A BOMB!!!", Prefix ); 
-			ClientPrintColor( id, "%s PLANT A BOMB!!!", Prefix ) 
-			ClientPrintColor( id, "%s PLANT A BOMB!!!", Prefix ) 
-		}
-	}
-}
-public bomb_planted( )
-{
-	if( !isBomb ) return;
-
-	isBombPlanted= true;
-	if( get_pcvar_num( CvarHudc4Timer ) )
-	{
-		c4timer = get_pcvar_num( Mpc4timer );
-		dispTime()
-		set_task(1.0, "dispTime", 652450, "", 0, "b");
-	}
-	isBomb = false;
-}
-public bomb_defused()
-{
-	if(isBombPlanted)
-	{
-		remove_task( 652450 );
-		isBombPlanted = false;
-	}
-	
-}
-public bomb_explode()
-{
-	if(isBombPlanted)
-	{
-		remove_task( 652450 );
-		isBombPlanted = false;
-	}
-	
-}
-public dispTime()
-{   
-	if( !isBombPlanted )
-	{
-		remove_task( 652450 );
-		return;
-	}
-	
-	
-	if( c4timer >= 0 )
-	{
-		if( c4timer > 13 ) set_hudmessage( 0, 150, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1 );
-		else if( c4timer > 7 ) set_hudmessage( 150, 150, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1 );
-			else set_hudmessage( 150, 0, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1 );
-		
-		ShowSyncHudMsg( 0, c4SyncMsg, "C4: %d", c4timer );
-		
-		--c4timer;
-	}
-	
-} 
-public plugin_end( )
-{
-    TrieDestroy( tBuyCommands );
+    }
 }
 
-public client_command( client )
+public clcmd_fullupdate()
 {
-	if( !is_user_alive( client ) )
-    	{
-        	return PLUGIN_CONTINUE;
-    	}
-    
-    	static szArg[ 15 ];
-    
-    	if( read_argv( 0, szArg, 14 ) > 13 ) // cl_setautobuy = 1234567890123 = 13
-    	{
-        	return PLUGIN_CONTINUE;
-    	}
-    
-    	strtolower( szArg );
-    	if( TrieKeyExists( tBuyCommands, szArg )
-    	&& ( 1 << ( _:cs_get_user_team( client ) ) & ( ( 1 << ( _:CS_TEAM_T ) ) | ( 1 << ( _:CS_TEAM_CT ) ) ) ) )
-    	{
-        	new iCvar = get_pcvar_num( CvarBuyTime )
-        
-        	if( get_gametime() - fRoundStart > iCvar )
-        	{
-            		engclient_print( client, engprint_center, "%d seconds have passed.^nYou can't buy anything now!", iCvar );
-            
-            		return PLUGIN_HANDLED;
-        	}
-    	}
-    
-    	return PLUGIN_CONTINUE;
-} 
-public client_disconnect( id )
-{
-	if( task_exists( id ) )
-	{
-		remove_task( id );
-	}
+    return PLUGIN_HANDLED;
 }
-public DisableC4Drop( const iEntity ) 
-{
-        
-	SetHamReturnInteger( 0 );
-        return HAM_SUPERCEDE;
-}
-public UnlockBuyZone()
-{
-	new Float:bMin[3] = { -8191.0, -8191.0, -8191.0 };
-	new Float:bMax[3] = { 8191.0, 8191.0, 8191.0 };
 
-
-	new BuyZone = create_entity( "func_buyzone" )
-
-	DispatchKeyValue(BuyZone, "team", "0" );
-	DispatchSpawn( BuyZone );
-	entity_set_size( BuyZone, bMin, bMax );
-
-}
-public Message_StatusIcon( iMsgId, iMsgDest, usr )  
+public task_c4_strip(id)
 {
-	if( get_pcvar_num( CvarBuyZone ) == 0 )
-	{
-		static szIcon[ 8 ];  
-		get_msg_arg_string( 2, szIcon, charsmax( szIcon ) );  
-		if( equal( szIcon, "buyzone" ) ) 
-		{  
-			if( get_msg_arg_int(1) )  
-			{
-				set_pdata_int( usr, 235, get_pdata_int( usr, 235 ) & ~( 1<<0 ) ); 
-				return PLUGIN_HANDLED;  
-			}  
-		}
-		return PLUGIN_CONTINUE; 
-	}
-	return PLUGIN_CONTINUE;
+    if (!is_user_alive(id))
+    {
+        return;
+    }
+
+    if (rg_has_item_by_name(id, "weapon_c4"))
+    {
+        rg_remove_item(id, "weapon_c4", true);
+        rg_set_user_bpammo(id, WEAPON_C4, 0);
+        bomb_plant(id);
+    }
 }
-stock ClientPrintColor( id, String[ ], any:... ){
-	new szMsg[ 190 ];
-	vformat( szMsg, charsmax( szMsg ), String, 3 );
-	
-	replace_all( szMsg, charsmax( szMsg ), "!n", "^1" );
-	replace_all( szMsg, charsmax( szMsg ), "!t", "^3" );
-	replace_all( szMsg, charsmax( szMsg ), "!g", "^4" );
-	
-	static msgSayText = 0;
-	static fake_user;
-	
-	if( !msgSayText )
-	{
-		msgSayText = get_user_msgid( "SayText" );
-		fake_user = get_maxplayers( ) + 1;
-	}
-	
-	message_begin( id ? MSG_ONE_UNRELIABLE : MSG_BROADCAST, msgSayText, _, id );
-	write_byte( id ? id : fake_user );
-	write_string( szMsg );
-	message_end( );
+
+public bomb_plant(player)
+{
+    new Float:origin[3];
+    get_entvar(player, var_origin, origin);
+    origin[0] += 30.0;
+
+    rg_plant_bomb(player, origin);
+
+    client_print(0, print_center, "#Cstrike_TitlesTXT_Bomb_Planted");
+    client_cmd(0, "spk sound/radio/bombpl.wav");
+
+    g_isBombPlanted = true;
+
+    if (get_pcvar_num(g_cvarHudc4Timer))
+    {
+        g_c4timer = get_pcvar_num(g_cvarMpc4timer);
+        task_disp_time();
+        set_task(1.0, "task_disp_time", TASK_BOMB_TIMER, "", 0, "b");
+    }
 }
-/* 
-	MADE BY ALGHTRYER.
-*/
+
+public log_msg_plant_bomb()
+{
+    if (get_pcvar_num(g_cvarAutoPlant))
+        return;
+
+    if (g_startRetake)
+    {
+        new szLogUser[80], szName[32];
+        read_logargv(0, szLogUser, charsmax(szLogUser));
+        parse_loguser(szLogUser, szName, charsmax(szName));
+
+        new id = get_user_index(szName);
+
+        if (rg_has_item_by_name(id, "weapon_c4"))
+        {
+            engclient_cmd(id, "weapon_c4");
+            client_print(id, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!");
+            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
+            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
+            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
+        }
+    }
+}
+
+public log_bomb_planted()
+{
+    if (!g_isBomb)
+        return;
+
+    g_isBombPlanted = true;
+    if (get_pcvar_num(g_cvarHudc4Timer))
+    {
+        g_c4timer = get_pcvar_num(g_cvarMpc4timer);
+        task_disp_time();
+        set_task(1.0, "task_disp_time", TASK_BOMB_TIMER, "", 0, "b");
+    }
+    g_isBomb = false;
+}
+
+public log_bomb_defused()
+{
+    if (g_isBombPlanted)
+    {
+        remove_task(TASK_BOMB_TIMER);
+        g_isBombPlanted = false;
+    }
+}
+
+public log_bomb_explode()
+{
+    if (g_isBombPlanted)
+    {
+        remove_task(TASK_BOMB_TIMER);
+        g_isBombPlanted = false;
+    }
+}
+
+public task_disp_time()
+{
+    if (!g_isBombPlanted)
+    {
+        remove_task(TASK_BOMB_TIMER);
+        return;
+    }
+
+    if (g_c4timer >= 0)
+    {
+        if (g_c4timer > 13)
+            set_hudmessage(0, 150, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1);
+        else if (g_c4timer > 7)
+            set_hudmessage(150, 150, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1);
+        else
+            set_hudmessage(150, 0, 0, -1.0, 0.80, 0, 1.0, 1.0, 0.01, 0.01, -1);
+
+        ShowSyncHudMsg(0, g_c4SyncMsg, "C4: %d", g_c4timer);
+        g_c4timer--;
+    }
+}
+
+public plugin_end()
+{
+    TrieDestroy(g_tBuyCommands);
+}
+
+public client_command(client)
+{
+    if (!is_user_alive(client))
+    {
+        return PLUGIN_CONTINUE;
+    }
+
+    static szArg[15];
+
+    if (read_argv(0, szArg, 14) > 13)
+    {
+        return PLUGIN_CONTINUE;
+    }
+
+    strtolower(szArg);
+    if (TrieKeyExists(g_tBuyCommands, szArg))
+    {
+        new TeamName:team = get_member(client, m_iTeam);
+        if (team == TEAM_TERRORIST || team == TEAM_CT)
+        {
+            new iCvar = get_pcvar_num(g_cvarBuyTime);
+            if (get_gametime() - g_fRoundStart > float(iCvar))
+            {
+                engclient_print(client, engprint_center, "%d seconds have passed.^nYou can't buy anything now!", iCvar);
+                return PLUGIN_HANDLED;
+            }
+        }
+    }
+
+    return PLUGIN_CONTINUE;
+}
+
+public client_disconnect(id)
+{
+    if (task_exists(id))
+    {
+        remove_task(id);
+    }
+}
+
+public hook_drop_player_item(const this, const pszItemName[])
+{
+    if (equali(pszItemName, "weapon_c4"))
+    {
+        SetHookChainReturn(ATYPE_EDICT, 0);
+        return HC_SUPERCEDE;
+    }
+    return HC_CONTINUE;
+}
+
+public unlock_buyzone()
+{
+    new Float:bMin[3] = {-8191.0, -8191.0, -8191.0};
+    new Float:bMax[3] = {8191.0, 8191.0, 8191.0};
+
+    new buyZone = create_entity("func_buyzone");
+    DispatchKeyValue(buyZone, "team", "0");
+    DispatchSpawn(buyZone);
+    entity_set_size(buyZone, bMin, bMax);
+}
+
+public msg_status_icon(iMsgId, iMsgDest, usr)
+{
+    if (get_pcvar_num(g_cvarBuyZone) == 0)
+    {
+        static szIcon[8];
+        get_msg_arg_string(2, szIcon, charsmax(szIcon));
+        if (equal(szIcon, "buyzone"))
+        {
+            if (get_msg_arg_int(1))
+            {
+                return PLUGIN_HANDLED;
+            }
+        }
+        return PLUGIN_CONTINUE;
+    }
+    return PLUGIN_CONTINUE;
+}
+
+stock ClientPrintColor(id, const string[], any:...)
+{
+    new szMsg[190];
+    vformat(szMsg, charsmax(szMsg), string, 3);
+
+    replace_all(szMsg, charsmax(szMsg), "!n", "^1");
+    replace_all(szMsg, charsmax(szMsg), "!t", "^3");
+    replace_all(szMsg, charsmax(szMsg), "!g", "^4");
+
+    static msgSayText = 0;
+    static fakeUser;
+
+    if (!msgSayText)
+    {
+        msgSayText = get_user_msgid("SayText");
+        fakeUser = get_maxplayers() + 1;
+    }
+
+    message_begin(id ? MSG_ONE_UNRELIABLE : MSG_BROADCAST, msgSayText, _, id);
+    write_byte(id ? id : fakeUser);
+    write_string(szMsg);
+    message_end();
+}
