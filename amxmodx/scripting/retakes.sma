@@ -233,7 +233,7 @@ public event_round_start()
     if (g_startRetake)
     {
         new players[32], num, numT, numCT, iPlayer;
-        new szNextMap[64] = "N/A";
+        new szNextMap[64] = "未设置";
         get_players(players, num);
 
         set_hudmessage(0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0);
@@ -248,12 +248,12 @@ public event_round_start()
                 case TEAM_TERRORIST:
                 {
                     numT++;
-                    ShowSyncHudMsg(iPlayer, g_syncMsg, "Defend Bombsite: %s", g_bombSite ? "B" : "A");
+                    ShowSyncHudMsg(iPlayer, g_syncMsg, "防守点位 %s", g_bombSite ? "B" : "A");
                 }
                 case TEAM_CT:
                 {
                     numCT++;
-                    ShowSyncHudMsg(iPlayer, g_syncMsg, "Retake Bombsite: %s", g_bombSite ? "B" : "A");
+                    ShowSyncHudMsg(iPlayer, g_syncMsg, "回防点位 %s", g_bombSite ? "B" : "A");
                 }
             }
         }
@@ -278,12 +278,12 @@ public event_round_start()
             g_isBomb = true;
         }
 
-        ClientPrintColor(0, "%s Retake %s : %d Ts vs %d CTs", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
-        ClientPrintColor(0, "%s Round: %d/%d | Next Map: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
+        ClientPrintColor(0, "%s 回防点位 %s : %d 名T vs %d 名CT", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
+        ClientPrintColor(0, "%s 回合: %d/%d | 下一张地图: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
 
         if (get_pcvar_num(g_cvarBuyZone))
         {
-            ClientPrintColor(0, "%s You have %d seconds for buy!", g_prefix, get_pcvar_num(g_cvarBuyTime));
+            ClientPrintColor(0, "%s 你有 %d 秒购买时间！", g_prefix, get_pcvar_num(g_cvarBuyTime));
         }
 
         if (g_round == get_pcvar_num(g_cvarRounds))
@@ -294,7 +294,7 @@ public event_round_start()
             }
             else
             {
-                server_print("[RETAKES] Cvar amx_nextmap not found. Skipping map change.");
+                server_print("[RETAKES] 未找到 amx_nextmap，已跳过自动换图。");
             }
         }
     }
@@ -317,7 +317,7 @@ public task_info_hud()
     if (g_startRetake)
     {
         set_hudmessage(0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1);
-        ShowSyncHudMsg(0, g_syncInfoHud, "Bombsite : %s", g_bombSite ? "B" : "A");
+        ShowSyncHudMsg(0, g_syncInfoHud, "点位 : %s", g_bombSite ? "B" : "A");
     }
 }
 
@@ -409,7 +409,7 @@ public event_on_ct_win()
     {
         g_roundWin = 0;
         swap_teams();
-        ClientPrintColor(0, "%s CT win. Swapping Teams!", g_prefix);
+        ClientPrintColor(0, "%s CT 获胜，正在交换阵营！", g_prefix);
         g_onCtWinRound = false;
     }
 }
@@ -427,7 +427,7 @@ public event_on_te_win()
         if (g_roundWin == get_pcvar_num(g_cvarTTwins))
         {
             swap_teams();
-            ClientPrintColor(0, "%s TT win %d in a row. Swapping Teams!", g_prefix, g_roundWin);
+            ClientPrintColor(0, "%s T 连胜 %d 局，正在交换阵营！", g_prefix, g_roundWin);
             g_roundWin = 0;
         }
         g_onTeWinRound = false;
@@ -645,9 +645,9 @@ public log_msg_plant_bomb()
         {
             engclient_cmd(id, "weapon_c4");
             client_print(id, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!");
-            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
-            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
-            ClientPrintColor(id, "%s PLANT A BOMB!!!", g_prefix);
+            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
+            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
+            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
         }
     }
 }
