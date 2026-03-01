@@ -106,20 +106,14 @@ public plugin_init()
     register_plugin(PLUGIN, VERSION, AUTHOR);
     register_cvar("retakes_version", VERSION, FCVAR_SERVER|FCVAR_UNLOGGED);
 
-    register_event("SendAudio", "event_end_round", "a", "2&%!MRAD_terwin", "2&%!MRAD_ctwin", "2&%!MRAD_rounddraw");
-    register_event("TextMsg", "event_restart_game", "a", "2&#Game_C", "2&#Game_w");
-    register_event("SendAudio", "event_on_ct_win", "a", "2&%!MRAD_ctwin");
-    register_event("SendAudio", "event_on_te_win", "a", "2&%!MRAD_terwin");
-    register_event("HLTV", "event_round_start", "a", "1=0", "2=0");
-    register_event("ResetHUD", "event_draw_buyzone_icon", "be");
-
-    register_logevent("log_msg_plant_bomb", 3, "2=Spawned_With_The_Bomb");
-    register_logevent("log_bomb_planted", 3, "2=Planted_The_Bomb");
-    register_logevent("log_bomb_defused", 3, "2=Defused_The_Bomb");
-    register_logevent("log_bomb_explode", 6, "3=Target_Bombed");
-    register_logevent("log_when_round_start", 2, "1=Round_Start");
-
-    register_message(get_user_msgid("StatusIcon"), "msg_status_icon");
+    RegisterHookChain(RG_RoundEnd, "hook_round_end", .post = true);
+    RegisterHookChain(RG_CSGameRules_RestartRound, "hook_restart_round", .post = true);
+    RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_round_freeze_end", .post = true);
+    RegisterHookChain(RG_CBasePlayer_MakeBomber, "hook_make_bomber", .post = true);
+    RegisterHookChain(RG_PlantBomb, "hook_plant_bomb", .post = true);
+    RegisterHookChain(RG_CGrenade_DefuseBombEnd, "hook_defuse_bomb_end", .post = true);
+    RegisterHookChain(RG_CGrenade_ExplodeBomb, "hook_explode_bomb", .post = true);
+    RegisterMessage(get_user_msgid("StatusIcon"), "msg_status_icon", .post = false);
 
     RegisterHookChain(RG_CBasePlayer_Spawn, "hook_player_spawn", .post = true);
     RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "hook_drop_player_item", .post = false);
@@ -310,6 +304,92 @@ public log_when_round_start()
         }
         set_task(10.0, "task_bomb_not_plant", TASK_BOMB_NOT_PLANT);
     }
+}
+
+public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay)
+{
+    switch (status)
+    {
+        case WINSTATUS_CTS:
+        {
+            event_end_round();
+            event_on_ct_win();
+        }
+        case WINSTATUS_TERRORISTS:
+        {
+            event_end_round();
+            event_on_te_win();
+        }
+        case WINSTATUS_DRAW:
+        {
+            event_end_round();
+        }
+    }
+
+    // Game commence / restart previously listened via TextMsg.
+    if (event == ROUND_GAME_COMMENCE || event == ROUND_GAME_RESTART)
+    {
+        event_restart_game();
+    }
+
+    return HC_CONTINUE;
+}
+
+public hook_restart_round()
+{
+    event_round_start();
+    return HC_CONTINUE;
+}
+
+public hook_round_freeze_end()
+{
+    log_when_round_start();
+    return HC_CONTINUE;
+}
+
+public hook_make_bomber(const player)
+{
+    if (get_pcvar_num(g_cvarAutoPlant))
+    {
+        return HC_CONTINUE;
+    }
+
+    if (!g_startRetake || !is_user_connected(player))
+    {
+        return HC_CONTINUE;
+    }
+
+    if (rg_has_item_by_name(player, "weapon_c4"))
+    {
+        engclient_cmd(player, "weapon_c4");
+        client_print(player, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!");
+        ClientPrintColor(player, "%s 快去下包！！！", g_prefix);
+        ClientPrintColor(player, "%s 快去下包！！！", g_prefix);
+        ClientPrintColor(player, "%s 快去下包！！！", g_prefix);
+    }
+
+    return HC_CONTINUE;
+}
+
+public hook_plant_bomb(const index, Float:vecStart[3], Float:vecVelocity[3])
+{
+    log_bomb_planted();
+    return HC_CONTINUE;
+}
+
+public hook_defuse_bomb_end(const this, const player, bool:bDefused)
+{
+    if (bDefused)
+    {
+        log_bomb_defused();
+    }
+    return HC_CONTINUE;
+}
+
+public hook_explode_bomb(const this, tracehandle, const bitsDamageType)
+{
+    log_bomb_explode();
+    return HC_CONTINUE;
 }
 
 public task_info_hud()
@@ -570,6 +650,8 @@ public hook_player_spawn(const id)
         }
     }
 
+    event_draw_buyzone_icon(id);
+
     return HC_CONTINUE;
 }
 
@@ -773,22 +855,22 @@ public unlock_buyzone()
     entity_set_size(buyZone, bMin, bMax);
 }
 
-public msg_status_icon(iMsgId, iMsgDest, usr)
+public msg_status_icon(msg_id, msg_dest, msg_entity)
 {
     if (get_pcvar_num(g_cvarBuyZone) == 0)
     {
         static szIcon[8];
-        get_msg_arg_string(2, szIcon, charsmax(szIcon));
+        GetMessageData(MsgArg, 2, szIcon, charsmax(szIcon));
         if (equal(szIcon, "buyzone"))
         {
-            if (get_msg_arg_int(1))
+            if (GetMessageData(MsgArg, 1))
             {
-                return PLUGIN_HANDLED;
+                return HC_SUPERCEDE;
             }
         }
-        return PLUGIN_CONTINUE;
+        return HC_CONTINUE;
     }
-    return PLUGIN_CONTINUE;
+    return HC_CONTINUE;
 }
 
 stock ClientPrintColor(id, const string[], any:...)
