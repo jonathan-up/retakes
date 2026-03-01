@@ -60,9 +60,6 @@ new bool:g_onCtWinRound;
 new bool:g_onTeWinRound;
 new bool:g_isBomb;
 
-new Trie:g_tBuyCommands;
-new Float:g_fRoundStart;
-
 new g_ePlayerData[33][PlayerData];
 new bool:g_savePlayerData[33];
 
@@ -122,27 +119,6 @@ public plugin_init()
 
     register_clcmd("fullupdate", "clcmd_fullupdate");
 
-    new const szBuyCommands[][] =
-    {
-        "usp", "glock", "deagle", "p228", "elites",
-        "fn57", "m3", "xm1014", "mp5", "tmp", "p90",
-        "mac10", "ump45", "ak47", "galil", "famas",
-        "sg552", "m4a1", "aug", "scout", "awp", "g3sg1",
-        "sg550", "m249", "vest", "vesthelm", "flash",
-        "hegren", "sgren", "defuser", "nvgs", "shield",
-        "primammo", "secammo", "km45", "9x19mm", "nighthawk",
-        "228compact", "fiveseven", "12gauge", "autoshotgun",
-        "mp", "c90", "cv47", "defender", "clarion", "krieg552",
-        "bullpup", "magnum", "d3au1", "krieg550",
-        "buy", "buyammo1", "buyammo2", "buyequip", "cl_autobuy",
-        "cl_rebuy", "cl_setautobuy", "cl_setrebuy"
-    };
-
-    g_tBuyCommands = TrieCreate();
-    for (new i = 0; i < sizeof(szBuyCommands); i++)
-    {
-        TrieSetCell(g_tBuyCommands, szBuyCommands[i], i);
-    }
 }
 
 public plugin_cfg()
@@ -223,8 +199,6 @@ public event_round_start()
                 }
             }
         }
-
-        g_fRoundStart = get_gametime();
 
         if (g_cvarNextMap)
         {
@@ -761,40 +735,8 @@ public task_disp_time()
     }
 }
 
-public plugin_end()
-{
-    TrieDestroy(g_tBuyCommands);
-}
-
 public client_command(client)
 {
-    if (!is_user_alive(client))
-    {
-        return PLUGIN_CONTINUE;
-    }
-
-    static szArg[15];
-
-    if (read_argv(0, szArg, 14) > 13)
-    {
-        return PLUGIN_CONTINUE;
-    }
-
-    strtolower(szArg);
-    if (TrieKeyExists(g_tBuyCommands, szArg))
-    {
-        new TeamName:team = get_member(client, m_iTeam);
-        if (team == TEAM_TERRORIST || team == TEAM_CT)
-        {
-            new iCvar = get_pcvar_num(g_cvarBuyTime);
-            if (get_gametime() - g_fRoundStart > float(iCvar))
-            {
-                engclient_print(client, engprint_center, "%d seconds have passed.^nYou can't buy anything now!", iCvar);
-                return PLUGIN_HANDLED;
-            }
-        }
-    }
-
     return PLUGIN_CONTINUE;
 }
 
