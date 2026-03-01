@@ -1,31 +1,3 @@
-/*
- * ___________
- *
- * R E T A K E S v1.2
- * alghtryer.github.io/retakes
- *
- * Author: ALGHTRYER
- * e: alghtryer@gmail.com w: alghtryer.github.io
- * ___________
- *
- * The plugin sets up a retake situation in a random site in the map. TT plant bomb and CT have 40 seconds to defuse.
- * TT spawned on bombsite (A or B), CT on random spawn depending of where c4 plant (A or B).
- *
- * Features:
- * - Warm Up for 30 seconds on map start.
- * - Auto plant Bomb.
- * - If CT win, team will be swap.
- * - If TT win 3(cvar) rounds in row, team will be swap.
- * - Playing 15(cvar) rounds and map change on nextmap.
- * - c4 Hud timer.
- * - Buy Time for 5seconds(cvar).
- * - Unlock/Remove buy zones.
- * - If bomb don't plant, round will be restarted. Rounds and player money/kill/deaths be returned on same.
- *
- * Refactored with ReAPI (replaces cstrike, hamsandwich, fakemeta)
- * - Requires: amxmodx, reapi, amxmisc, engine
- */
-
 #include <amxmodx>
 #include <amxmisc>
 #include <engine>
