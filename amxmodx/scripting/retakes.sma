@@ -65,6 +65,7 @@ new g_ePlayerData[33][PlayerData];
 new bool:g_savePlayerData[33];
 
 new HookChain:g_hRoundEndHook;
+new HookChain:g_hRestartRoundPreHook;
 new HookChain:g_hRestartRoundHook;
 new HookChain:g_hRoundFreezeEndHook;
 new HookChain:g_hMakeBomberHook;
@@ -85,6 +86,7 @@ public plugin_init()
     g_cvarEnable = register_cvar("retakes_enable", "1");
 
     g_hRoundEndHook = RegisterHookChain(RG_RoundEnd, "RG_RoundEnd_Post", .post = true);
+    g_hRestartRoundPreHook = RegisterHookChain(RG_CSGameRules_RestartRound, "RG_CSGameRules_RestartRound_Pre", .post = false);
     g_hRestartRoundHook = RegisterHookChain(RG_CSGameRules_RestartRound, "RG_CSGameRules_RestartRound_Post", .post = true);
     g_hRoundFreezeEndHook = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "RG_CSGameRules_OnRoundFreezeEnd_Post", .post = true);
     g_hMakeBomberHook = RegisterHookChain(RG_CBasePlayer_MakeBomber, "RG_CBasePlayer_MakeBomber_Post", .post = true);
@@ -145,14 +147,7 @@ public plugin_cfg()
 
     read_spawns();
 
-    set_pcvar_float(g_cvarMpRoundtime, 1.00);
-    set_pcvar_num(g_cvarMpTimelimit, 0);
-    set_pcvar_num(g_cvarMpLimitTeams, 5);
-    set_pcvar_num(g_cvarMpAutoTeamBalance, 1);
-    set_pcvar_num(g_cvarMpc4timer, 35);
-    set_pcvar_float(g_cvarMpBuyTime, 1.5);
-    set_pcvar_num(g_cvarMpBuyAnywhere, 1);
-    set_pcvar_num(g_cvarMpFreezetime, 5);
+    apply_round_cvars();
 
     if (get_pcvar_num(g_cvarInfoHud))
     {
@@ -188,6 +183,7 @@ stock set_retakes_hooks_enabled(bool:enabled)
     if (enabled)
     {
         EnableHookChain(g_hRoundEndHook);
+        EnableHookChain(g_hRestartRoundPreHook);
         EnableHookChain(g_hRestartRoundHook);
         EnableHookChain(g_hRoundFreezeEndHook);
         EnableHookChain(g_hMakeBomberHook);
@@ -201,6 +197,7 @@ stock set_retakes_hooks_enabled(bool:enabled)
     else
     {
         DisableHookChain(g_hRoundEndHook);
+        DisableHookChain(g_hRestartRoundPreHook);
         DisableHookChain(g_hRestartRoundHook);
         DisableHookChain(g_hRoundFreezeEndHook);
         DisableHookChain(g_hMakeBomberHook);
@@ -344,6 +341,17 @@ public RG_RoundEnd_Post(WinStatus:status, ScenarioEventEndRound:event, Float:tmD
     return HC_CONTINUE;
 }
 
+public RG_CSGameRules_RestartRound_Pre()
+{
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
+    apply_round_cvars();
+    return HC_CONTINUE;
+}
+
 public RG_CSGameRules_RestartRound_Post()
 {
     if (!is_retakes_enabled())
@@ -353,6 +361,18 @@ public RG_CSGameRules_RestartRound_Post()
 
     event_round_start();
     return HC_CONTINUE;
+}
+
+stock apply_round_cvars()
+{
+    set_pcvar_float(g_cvarMpRoundtime, 1.00);
+    set_pcvar_num(g_cvarMpTimelimit, 0);
+    set_pcvar_num(g_cvarMpLimitTeams, 5);
+    set_pcvar_num(g_cvarMpAutoTeamBalance, 1);
+    set_pcvar_num(g_cvarMpc4timer, 35);
+    set_pcvar_float(g_cvarMpBuyTime, 1.5);
+    set_pcvar_num(g_cvarMpBuyAnywhere, 1);
+    set_pcvar_num(g_cvarMpFreezetime, 5);
 }
 
 public RG_CSGameRules_OnRoundFreezeEnd_Post()
