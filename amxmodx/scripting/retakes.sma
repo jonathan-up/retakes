@@ -90,17 +90,17 @@ public plugin_init()
     register_cvar("retakes_version", VERSION, FCVAR_SERVER|FCVAR_UNLOGGED);
     g_cvarEnable = register_cvar("retakes_enable", "1");
 
-    g_hRoundEndHook = RegisterHookChain(RG_RoundEnd, "hook_round_end", .post = true);
-    g_hRestartRoundHook = RegisterHookChain(RG_CSGameRules_RestartRound, "hook_restart_round", .post = true);
-    g_hRoundFreezeEndHook = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_round_freeze_end", .post = true);
-    g_hMakeBomberHook = RegisterHookChain(RG_CBasePlayer_MakeBomber, "hook_make_bomber", .post = true);
-    g_hPlantBombHook = RegisterHookChain(RG_PlantBomb, "hook_plant_bomb", .post = true);
-    g_hDefuseBombEndHook = RegisterHookChain(RG_CGrenade_DefuseBombEnd, "hook_defuse_bomb_end", .post = true);
-    g_hExplodeBombHook = RegisterHookChain(RG_CGrenade_ExplodeBomb, "hook_explode_bomb", .post = true);
-    g_hStatusIconMsgHook = RegisterMessage(get_user_msgid("StatusIcon"), "msg_status_icon", .post = false);
+    g_hRoundEndHook = RegisterHookChain(RG_RoundEnd, "RG_RoundEnd_Post", .post = true);
+    g_hRestartRoundHook = RegisterHookChain(RG_CSGameRules_RestartRound, "RG_CSGameRules_RestartRound_Post", .post = true);
+    g_hRoundFreezeEndHook = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "RG_CSGameRules_OnRoundFreezeEnd_Post", .post = true);
+    g_hMakeBomberHook = RegisterHookChain(RG_CBasePlayer_MakeBomber, "RG_CBasePlayer_MakeBomber_Post", .post = true);
+    g_hPlantBombHook = RegisterHookChain(RG_PlantBomb, "RG_PlantBomb_Post", .post = true);
+    g_hDefuseBombEndHook = RegisterHookChain(RG_CGrenade_DefuseBombEnd, "RG_CGrenade_DefuseBombEnd_Post", .post = true);
+    g_hExplodeBombHook = RegisterHookChain(RG_CGrenade_ExplodeBomb, "RG_CGrenade_ExplodeBomb_Post", .post = true);
+    g_hStatusIconMsgHook = RegisterMessage(get_user_msgid("StatusIcon"), "StatusIcon_Pre", .post = false);
 
-    g_hPlayerSpawnHook = RegisterHookChain(RG_CBasePlayer_Spawn, "hook_player_spawn", .post = true);
-    g_hDropPlayerItemHook = RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "hook_drop_player_item", .post = false);
+    g_hPlayerSpawnHook = RegisterHookChain(RG_CBasePlayer_Spawn, "RG_CBasePlayer_Spawn_Post", .post = true);
+    g_hDropPlayerItemHook = RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "RG_CBasePlayer_DropPlayerItem_Pre", .post = false);
     g_hEnableCvarHook = hook_cvar_change(g_cvarEnable, "cvar_change_retakes_enable");
 
     g_msgStatusIcon = get_user_msgid("StatusIcon");
@@ -330,7 +330,7 @@ public log_when_round_start()
     }
 }
 
-public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay)
+public RG_RoundEnd_Post(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay)
 {
     if (!is_retakes_enabled())
     {
@@ -364,7 +364,7 @@ public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDel
     return HC_CONTINUE;
 }
 
-public hook_restart_round()
+public RG_CSGameRules_RestartRound_Post()
 {
     if (!is_retakes_enabled())
     {
@@ -375,7 +375,7 @@ public hook_restart_round()
     return HC_CONTINUE;
 }
 
-public hook_round_freeze_end()
+public RG_CSGameRules_OnRoundFreezeEnd_Post()
 {
     if (!is_retakes_enabled())
     {
@@ -386,7 +386,7 @@ public hook_round_freeze_end()
     return HC_CONTINUE;
 }
 
-public hook_make_bomber(const player)
+public RG_CBasePlayer_MakeBomber_Post(const player)
 {
     if (!is_retakes_enabled())
     {
@@ -415,7 +415,7 @@ public hook_make_bomber(const player)
     return HC_CONTINUE;
 }
 
-public hook_plant_bomb(const index, Float:vecStart[3], Float:vecVelocity[3])
+public RG_PlantBomb_Post(const index, Float:vecStart[3], Float:vecVelocity[3])
 {
     if (!is_retakes_enabled())
     {
@@ -426,7 +426,7 @@ public hook_plant_bomb(const index, Float:vecStart[3], Float:vecVelocity[3])
     return HC_CONTINUE;
 }
 
-public hook_defuse_bomb_end(const this, const player, bool:bDefused)
+public RG_CGrenade_DefuseBombEnd_Post(const this, const player, bool:bDefused)
 {
     if (!is_retakes_enabled())
     {
@@ -440,7 +440,7 @@ public hook_defuse_bomb_end(const this, const player, bool:bDefused)
     return HC_CONTINUE;
 }
 
-public hook_explode_bomb(const this, tracehandle, const bitsDamageType)
+public RG_CGrenade_ExplodeBomb_Post(const this, tracehandle, const bitsDamageType)
 {
     if (!is_retakes_enabled())
     {
@@ -695,7 +695,7 @@ public pfn_keyvalue(entid)
     return PLUGIN_CONTINUE;
 }
 
-public hook_player_spawn(const id)
+public RG_CBasePlayer_Spawn_Post(const id)
 {
     if (!is_retakes_enabled())
     {
@@ -904,7 +904,7 @@ public client_disconnected(id)
     }
 }
 
-public hook_drop_player_item(const this, const pszItemName[])
+public RG_CBasePlayer_DropPlayerItem_Pre(const this, const pszItemName[])
 {
     if (!is_retakes_enabled())
     {
@@ -930,7 +930,7 @@ public unlock_buyzone()
     entity_set_size(buyZone, bMin, bMax);
 }
 
-public msg_status_icon(msg_id, msg_dest, msg_entity)
+public StatusIcon_Pre(msg_id, msg_dest, msg_entity)
 {
     if (!is_retakes_enabled())
     {
