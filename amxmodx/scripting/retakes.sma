@@ -29,14 +29,13 @@ new g_cvarMpc4timer;
 new g_cvarNextMap;
 new g_cvarRestartRound;
 new g_cvarMpBuyTime;
+new g_cvarMpBuyAnywhere;
 new g_cvarEnable;
 new cvarhook:g_hEnableCvarHook;
 
 new g_cvarTTwins;
 new g_cvarRounds;
-new g_cvarBuyTime;
 new g_cvarAutoPlant;
-new g_cvarBuyZone;
 new g_cvarInfoHud;
 new g_cvarSwapCt;
 new g_cvarSwapT;
@@ -65,9 +64,6 @@ new bool:g_isBomb;
 new g_ePlayerData[33][PlayerData];
 new bool:g_savePlayerData[33];
 
-new g_msgStatusIcon;
-new MessageHook:g_hStatusIconMsgHook;
-
 new HookChain:g_hRoundEndHook;
 new HookChain:g_hRestartRoundHook;
 new HookChain:g_hRoundFreezeEndHook;
@@ -95,14 +91,11 @@ public plugin_init()
     g_hPlantBombHook = RegisterHookChain(RG_PlantBomb, "RG_PlantBomb_Post", .post = true);
     g_hDefuseBombEndHook = RegisterHookChain(RG_CGrenade_DefuseBombEnd, "RG_CGrenade_DefuseBombEnd_Post", .post = true);
     g_hExplodeBombHook = RegisterHookChain(RG_CGrenade_ExplodeBomb, "RG_CGrenade_ExplodeBomb_Post", .post = true);
-    g_hStatusIconMsgHook = RegisterMessage(get_user_msgid("StatusIcon"), "StatusIcon_Pre", .post = false);
 
     g_hPlayerSpawnHook = RegisterHookChain(RG_CBasePlayer_Spawn, "RG_CBasePlayer_Spawn_Post", .post = true);
     g_hDropPlayerItemHook = RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "RG_CBasePlayer_DropPlayerItem_Pre", .post = false);
     g_hEntSelectSpawnPointHook = RegisterHookChain(RG_CBasePlayer_EntSelectSpawnPoint, "RG_CBasePlayer_EntSelectSpawnPoint_Pre", .post = false);
     g_hEnableCvarHook = hook_cvar_change(g_cvarEnable, "cvar_change_retakes_enable");
-
-    g_msgStatusIcon = get_user_msgid("StatusIcon");
 
     g_cvarMpFreezetime = get_cvar_pointer("mp_freezetime");
     g_cvarMpRoundtime = get_cvar_pointer("mp_roundtime");
@@ -111,6 +104,7 @@ public plugin_init()
     g_cvarMpAutoTeamBalance = get_cvar_pointer("mp_autoteambalance");
     g_cvarRestartRound = get_cvar_pointer("sv_restartround");
     g_cvarMpBuyTime = get_cvar_pointer("mp_buytime");
+    g_cvarMpBuyAnywhere = get_cvar_pointer("mp_buy_anywhere");
     g_cvarMpc4timer = get_cvar_pointer("mp_c4timer");
     g_cvarNextMap = get_cvar_pointer("amx_nextmap");
 
@@ -118,9 +112,7 @@ public plugin_init()
     g_cvarTTwins = register_cvar("retakes_rowwin", "3");
     g_cvarPrefix = register_cvar("retakes_prefix", "!g[RETAKES]");
     g_cvarAutoPlant = register_cvar("retakes_autoplant", "1");
-    g_cvarBuyZone = register_cvar("retakes_buyzone", "1");
     g_cvarInfoHud = register_cvar("retakes_infohud", "1");
-    g_cvarBuyTime = register_cvar("retakes_buytime", "5");
     g_cvarSwapCt = register_cvar("retakes_swapct", "1");
     g_cvarSwapT = register_cvar("retakes_swapt", "1");
     g_cvarHudc4Timer = register_cvar("retakes_hudc4timer", "1");
@@ -157,18 +149,10 @@ public plugin_cfg()
     set_pcvar_num(g_cvarMpTimelimit, 0);
     set_pcvar_num(g_cvarMpLimitTeams, 5);
     set_pcvar_num(g_cvarMpAutoTeamBalance, 1);
-    set_pcvar_num(g_cvarMpc4timer, 40);
+    set_pcvar_num(g_cvarMpc4timer, 35);
     set_pcvar_float(g_cvarMpBuyTime, 1.5);
-
-    if (get_pcvar_num(g_cvarBuyZone))
-    {
-        unlock_buyzone();
-        set_pcvar_num(g_cvarMpFreezetime, 5);
-    }
-    else
-    {
-        set_pcvar_num(g_cvarMpFreezetime, 1);
-    }
+    set_pcvar_num(g_cvarMpBuyAnywhere, 1);
+    set_pcvar_num(g_cvarMpFreezetime, 5);
 
     if (get_pcvar_num(g_cvarInfoHud))
     {
@@ -213,7 +197,6 @@ stock set_retakes_hooks_enabled(bool:enabled)
         EnableHookChain(g_hPlayerSpawnHook);
         EnableHookChain(g_hDropPlayerItemHook);
         EnableHookChain(g_hEntSelectSpawnPointHook);
-        EnableHookMessage(g_hStatusIconMsgHook);
     }
     else
     {
@@ -227,7 +210,6 @@ stock set_retakes_hooks_enabled(bool:enabled)
         DisableHookChain(g_hPlayerSpawnHook);
         DisableHookChain(g_hDropPlayerItemHook);
         DisableHookChain(g_hEntSelectSpawnPointHook);
-        DisableHookMessage(g_hStatusIconMsgHook);
     }
 }
 
@@ -305,11 +287,6 @@ public event_round_start()
 
     ClientPrintColor(0, "%s 回防点位 %s : %d 名T vs %d 名CT", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
     ClientPrintColor(0, "%s 回合: %d/%d | 下一张地图: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
-
-    if (get_pcvar_num(g_cvarBuyZone))
-    {
-        ClientPrintColor(0, "%s 你有 %d 秒购买时间！", g_prefix, get_pcvar_num(g_cvarBuyTime));
-    }
 
     if (g_round == get_pcvar_num(g_cvarRounds))
     {
@@ -788,23 +765,7 @@ public RG_CBasePlayer_Spawn_Post(const id)
         g_ePlayerData[id][Player_Money] = get_member(id, m_iAccount);
     }
 
-    event_draw_buyzone_icon(id);
-
     return HC_CONTINUE;
-}
-
-public event_draw_buyzone_icon(id)
-{
-    if (is_user_alive(id) && get_pcvar_num(g_cvarBuyZone))
-    {
-        message_begin(MSG_ONE, g_msgStatusIcon, _, id);
-        write_byte(1<<0);
-        write_string("buyzone");
-        write_byte(0);
-        write_byte(160);
-        write_byte(0);
-        message_end();
-    }
 }
 
 public clcmd_fullupdate()
@@ -966,40 +927,6 @@ public RG_CBasePlayer_DropPlayerItem_Pre(const this, const pszItemName[])
     {
         SetHookChainReturn(ATYPE_EDICT, 0);
         return HC_SUPERCEDE;
-    }
-    return HC_CONTINUE;
-}
-
-public unlock_buyzone()
-{
-    new Float:bMin[3] = {-8191.0, -8191.0, -8191.0};
-    new Float:bMax[3] = {8191.0, 8191.0, 8191.0};
-
-    new buyZone = create_entity("func_buyzone");
-    DispatchKeyValue(buyZone, "team", "0");
-    DispatchSpawn(buyZone);
-    entity_set_size(buyZone, bMin, bMax);
-}
-
-public StatusIcon_Pre(msg_id, msg_dest, msg_entity)
-{
-    if (!is_retakes_enabled())
-    {
-        return HC_CONTINUE;
-    }
-
-    if (get_pcvar_num(g_cvarBuyZone) == 0)
-    {
-        static szIcon[8];
-        GetMessageData(MsgArg, 2, szIcon, charsmax(szIcon));
-        if (equal(szIcon, "buyzone"))
-        {
-            if (GetMessageData(MsgArg, 1))
-            {
-                return HC_SUPERCEDE;
-            }
-        }
-        return HC_CONTINUE;
     }
     return HC_CONTINUE;
 }
