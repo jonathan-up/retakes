@@ -10,6 +10,8 @@
 
 #define TASK_BOMB_TIMER 652450
 #define TASK_BOMB_NOT_PLANT 773
+#define CLASSNAME_RETAKES_SPAWN_T "info_player_retakes_t"
+#define CLASSNAME_RETAKES_SPAWN_CT "info_player_retakes_ct"
 
 enum _:PlayerData
 {
@@ -35,7 +37,6 @@ new g_cvarRounds;
 new g_cvarBuyTime;
 new g_cvarAutoPlant;
 new g_cvarBuyZone;
-new g_cvarWarmUp;
 new g_cvarInfoHud;
 new g_cvarSwapCt;
 new g_cvarSwapT;
@@ -47,14 +48,12 @@ new g_roundWin;
 new g_round;
 
 new g_c4timer;
-new g_warmupTime;
 
 new g_syncMsg;
 new g_c4SyncMsg;
 new g_syncInfoHud;
 
 new bool:g_bombSite;
-new bool:g_startRetake;
 new bool:g_roundRestore;
 new bool:g_isBombPlanted;
 new bool:g_isRoundEnd;
@@ -78,11 +77,10 @@ new HookChain:g_hDefuseBombEndHook;
 new HookChain:g_hExplodeBombHook;
 new HookChain:g_hPlayerSpawnHook;
 new HookChain:g_hDropPlayerItemHook;
+new HookChain:g_hEntSelectSpawnPointHook;
 
-public plugin_precache()
-{
-    read_spawns(1);
-}
+new g_lastRetakeSpawnT;
+new g_lastRetakeSpawnCT;
 
 public plugin_init()
 {
@@ -101,6 +99,7 @@ public plugin_init()
 
     g_hPlayerSpawnHook = RegisterHookChain(RG_CBasePlayer_Spawn, "RG_CBasePlayer_Spawn_Post", .post = true);
     g_hDropPlayerItemHook = RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "RG_CBasePlayer_DropPlayerItem_Pre", .post = false);
+    g_hEntSelectSpawnPointHook = RegisterHookChain(RG_CBasePlayer_EntSelectSpawnPoint, "RG_CBasePlayer_EntSelectSpawnPoint_Pre", .post = false);
     g_hEnableCvarHook = hook_cvar_change(g_cvarEnable, "cvar_change_retakes_enable");
 
     g_msgStatusIcon = get_user_msgid("StatusIcon");
@@ -120,7 +119,6 @@ public plugin_init()
     g_cvarPrefix = register_cvar("retakes_prefix", "!g[RETAKES]");
     g_cvarAutoPlant = register_cvar("retakes_autoplant", "1");
     g_cvarBuyZone = register_cvar("retakes_buyzone", "1");
-    g_cvarWarmUp = register_cvar("retakes_warmup_time", "30");
     g_cvarInfoHud = register_cvar("retakes_infohud", "1");
     g_cvarBuyTime = register_cvar("retakes_buytime", "5");
     g_cvarSwapCt = register_cvar("retakes_swapct", "1");
@@ -143,13 +141,17 @@ public plugin_cfg()
 
     if (!is_retakes_enabled())
     {
-        g_startRetake = false;
         g_isBombPlanted = false;
         g_c4timer = -1;
+        remove_retake_spawn_spots();
+        g_lastRetakeSpawnT = 0;
+        g_lastRetakeSpawnCT = 0;
         remove_task(TASK_BOMB_TIMER);
         remove_task(TASK_BOMB_NOT_PLANT);
         return;
     }
+
+    read_spawns();
 
     set_pcvar_float(g_cvarMpRoundtime, 1.00);
     set_pcvar_num(g_cvarMpTimelimit, 0);
@@ -172,9 +174,7 @@ public plugin_cfg()
     {
         set_task(1.0, "task_info_hud", _, _, _, "b");
     }
-
-    g_warmupTime = get_pcvar_num(g_cvarWarmUp);
-    set_task(1.0, "task_show_countdown", .flags = "a", .repeat = g_warmupTime);
+    set_pcvar_num(g_cvarRestartRound, 1);
 }
 
 public plugin_natives()
@@ -186,7 +186,7 @@ public plugin_natives()
 
 public native_is_retakes(plugin, params)
 {
-    return is_retakes_enabled() && g_startRetake;
+    return is_retakes_enabled();
 }
 
 public native_rounds(plugin, params)
@@ -212,6 +212,7 @@ stock set_retakes_hooks_enabled(bool:enabled)
         EnableHookChain(g_hExplodeBombHook);
         EnableHookChain(g_hPlayerSpawnHook);
         EnableHookChain(g_hDropPlayerItemHook);
+        EnableHookChain(g_hEntSelectSpawnPointHook);
         EnableHookMessage(g_hStatusIconMsgHook);
     }
     else
@@ -225,6 +226,7 @@ stock set_retakes_hooks_enabled(bool:enabled)
         DisableHookChain(g_hExplodeBombHook);
         DisableHookChain(g_hPlayerSpawnHook);
         DisableHookChain(g_hDropPlayerItemHook);
+        DisableHookChain(g_hEntSelectSpawnPointHook);
         DisableHookMessage(g_hStatusIconMsgHook);
     }
 }
@@ -234,11 +236,18 @@ public cvar_change_retakes_enable(pcvar, const old_value[], const new_value[])
     new bool:enabled = str_to_num(new_value) != 0;
     set_retakes_hooks_enabled(enabled);
 
-    if (!enabled)
+    if (enabled)
     {
-        g_startRetake = false;
+        read_spawns();
+        set_pcvar_num(g_cvarRestartRound, 1);
+    }
+    else
+    {
         g_isBombPlanted = false;
         g_c4timer = -1;
+        remove_retake_spawn_spots();
+        g_lastRetakeSpawnT = 0;
+        g_lastRetakeSpawnCT = 0;
         remove_task(TASK_BOMB_TIMER);
         remove_task(TASK_BOMB_NOT_PLANT);
     }
@@ -250,84 +259,78 @@ public event_round_start()
     remove_task(TASK_BOMB_TIMER);
     g_isBombPlanted = false;
 
-    if (g_startRetake)
+    new players[32], num, numT, numCT, iPlayer;
+    new szNextMap[64] = "未设置";
+    get_players(players, num);
+
+    set_hudmessage(0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0);
+
+    for (new i = 0; i < num; i++)
     {
-        new players[32], num, numT, numCT, iPlayer;
-        new szNextMap[64] = "未设置";
-        get_players(players, num);
+        iPlayer = players[i];
+        new TeamName:team = get_member(iPlayer, m_iTeam);
 
-        set_hudmessage(0, 212, 255, -1.0, 0.28, 0, 6.0, 6.0);
-
-        for (new i = 0; i < num; i++)
+        switch (team)
         {
-            iPlayer = players[i];
-            new TeamName:team = get_member(iPlayer, m_iTeam);
-
-            switch (team)
+            case TEAM_TERRORIST:
             {
-                case TEAM_TERRORIST:
-                {
-                    numT++;
-                    ShowSyncHudMsg(iPlayer, g_syncMsg, "防守点位 %s", g_bombSite ? "B" : "A");
-                }
-                case TEAM_CT:
-                {
-                    numCT++;
-                    ShowSyncHudMsg(iPlayer, g_syncMsg, "回防点位 %s", g_bombSite ? "B" : "A");
-                }
+                numT++;
+                ShowSyncHudMsg(iPlayer, g_syncMsg, "防守点位 %s", g_bombSite ? "B" : "A");
+            }
+            case TEAM_CT:
+            {
+                numCT++;
+                ShowSyncHudMsg(iPlayer, g_syncMsg, "回防点位 %s", g_bombSite ? "B" : "A");
             }
         }
+    }
 
-        if (g_cvarNextMap)
+    if (g_cvarNextMap)
+    {
+        get_pcvar_string(g_cvarNextMap, szNextMap, charsmax(szNextMap));
+    }
+
+    g_round++;
+    g_roundRestore = true;
+
+    g_isRoundEnd = true;
+    g_isRoundRestart = true;
+    g_onCtWinRound = true;
+    g_onTeWinRound = true;
+
+    if (get_pcvar_num(g_cvarAutoPlant) == 0)
+    {
+        g_isBomb = true;
+    }
+
+    ClientPrintColor(0, "%s 回防点位 %s : %d 名T vs %d 名CT", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
+    ClientPrintColor(0, "%s 回合: %d/%d | 下一张地图: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
+
+    if (get_pcvar_num(g_cvarBuyZone))
+    {
+        ClientPrintColor(0, "%s 你有 %d 秒购买时间！", g_prefix, get_pcvar_num(g_cvarBuyTime));
+    }
+
+    if (g_round == get_pcvar_num(g_cvarRounds))
+    {
+        if (g_cvarNextMap && szNextMap[0])
         {
-            get_pcvar_string(g_cvarNextMap, szNextMap, charsmax(szNextMap));
+            server_cmd("changelevel %s", szNextMap);
         }
-
-        g_round++;
-        g_roundRestore = true;
-
-        g_isRoundEnd = true;
-        g_isRoundRestart = true;
-        g_onCtWinRound = true;
-        g_onTeWinRound = true;
-
-        if (get_pcvar_num(g_cvarAutoPlant) == 0)
+        else
         {
-            g_isBomb = true;
-        }
-
-        ClientPrintColor(0, "%s 回防点位 %s : %d 名T vs %d 名CT", g_prefix, g_bombSite ? "B" : "A", numT, numCT);
-        ClientPrintColor(0, "%s 回合: %d/%d | 下一张地图: %s", g_prefix, g_round, get_pcvar_num(g_cvarRounds), szNextMap);
-
-        if (get_pcvar_num(g_cvarBuyZone))
-        {
-            ClientPrintColor(0, "%s 你有 %d 秒购买时间！", g_prefix, get_pcvar_num(g_cvarBuyTime));
-        }
-
-        if (g_round == get_pcvar_num(g_cvarRounds))
-        {
-            if (g_cvarNextMap && szNextMap[0])
-            {
-                server_cmd("changelevel %s", szNextMap);
-            }
-            else
-            {
-                server_print("[RETAKES] 未找到 amx_nextmap，已跳过自动换图。");
-            }
+            server_print("[RETAKES] 未找到 amx_nextmap，已跳过自动换图。");
         }
     }
 }
 
 public log_when_round_start()
 {
-    if (g_startRetake)
+    if (task_exists(TASK_BOMB_NOT_PLANT))
     {
-        if (task_exists(TASK_BOMB_NOT_PLANT))
-        {
-            remove_task(TASK_BOMB_NOT_PLANT);
-        }
-        set_task(10.0, "task_bomb_not_plant", TASK_BOMB_NOT_PLANT);
+        remove_task(TASK_BOMB_NOT_PLANT);
     }
+    set_task(10.0, "task_bomb_not_plant", TASK_BOMB_NOT_PLANT);
 }
 
 public RG_RoundEnd_Post(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay)
@@ -398,7 +401,7 @@ public RG_CBasePlayer_MakeBomber_Post(const player)
         return HC_CONTINUE;
     }
 
-    if (!g_startRetake || !is_user_connected(player))
+    if (!is_user_connected(player))
     {
         return HC_CONTINUE;
     }
@@ -458,11 +461,8 @@ public task_info_hud()
         return;
     }
 
-    if (g_startRetake)
-    {
-        set_hudmessage(0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1);
-        ShowSyncHudMsg(0, g_syncInfoHud, "点位 : %s", g_bombSite ? "B" : "A");
-    }
+    set_hudmessage(0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1);
+    ShowSyncHudMsg(0, g_syncInfoHud, "点位 : %s", g_bombSite ? "B" : "A");
 }
 
 public task_bomb_not_plant()
@@ -483,22 +483,6 @@ public task_bomb_not_plant()
     }
 }
 
-public task_show_countdown()
-{
-    if (!is_retakes_enabled())
-    {
-        return;
-    }
-
-    client_print(0, print_center, "Retake start for : %d", g_warmupTime--);
-
-    if (g_warmupTime <= 0)
-    {
-        g_startRetake = true;
-        set_pcvar_num(g_cvarRestartRound, 1);
-    }
-}
-
 public event_end_round()
 {
     g_c4timer = -1;
@@ -509,12 +493,9 @@ public event_end_round()
         return;
     }
 
-    if (g_startRetake)
-    {
-        g_bombSite = !g_bombSite;
-        read_spawns(0);
-        g_isRoundEnd = false;
-    }
+    g_bombSite = !g_bombSite;
+    read_spawns();
+    g_isRoundEnd = false;
 }
 
 public event_restart_game()
@@ -532,24 +513,21 @@ public event_restart_game()
         return;
     }
 
-    if (g_startRetake)
+    if (g_roundRestore)
     {
-        if (g_roundRestore)
-        {
-            g_round--;
-            g_roundRestore = false;
-        }
-
-        new iPlayers[32], iNum;
-        get_players(iPlayers, iNum);
-
-        for (new i = 0; i < iNum; i++)
-        {
-            g_savePlayerData[iPlayers[i]] = true;
-        }
-
-        g_isRoundRestart = false;
+        g_round--;
+        g_roundRestore = false;
     }
+
+    new iPlayers[32], iNum;
+    get_players(iPlayers, iNum);
+
+    for (new i = 0; i < iNum; i++)
+    {
+        g_savePlayerData[iPlayers[i]] = true;
+    }
+
+    g_isRoundRestart = false;
 }
 
 public event_on_ct_win()
@@ -559,7 +537,7 @@ public event_on_ct_win()
         return;
     }
 
-    if (g_startRetake && get_pcvar_num(g_cvarSwapCt))
+    if (get_pcvar_num(g_cvarSwapCt))
     {
         g_roundWin = 0;
         swap_teams();
@@ -575,7 +553,7 @@ public event_on_te_win()
         return;
     }
 
-    if (g_startRetake && get_pcvar_num(g_cvarSwapT))
+    if (get_pcvar_num(g_cvarSwapT))
     {
         g_roundWin++;
         if (g_roundWin == get_pcvar_num(g_cvarTTwins))
@@ -608,7 +586,7 @@ stock swap_teams()
     }
 }
 
-stock read_spawns(type)
+stock read_spawns()
 {
     new szMap[32], szConfigDir[128], szMapFile[256];
 
@@ -625,7 +603,11 @@ stock read_spawns(type)
         return 0;
     }
 
-    new ent_T, ent_CT;
+    remove_retake_spawn_spots();
+    g_lastRetakeSpawnT = 0;
+    g_lastRetakeSpawnCT = 0;
+
+    new ent;
     new Data[128], len, line = 0;
     new team[8], p_origin[3][8], p_angles[3][8];
     new Float:origin[3], Float:angles[3];
@@ -646,53 +628,128 @@ stock read_spawns(type)
 
         if (equali(team, "T"))
         {
-            if (type == 1)
-                ent_T = create_entity("info_player_deathmatch");
-            else
-                ent_T = find_ent_by_class(ent_T, "info_player_deathmatch");
-
-            if (ent_T > 0)
-            {
-                set_entvar(ent_T, var_iuser1, 1);
-                set_entvar(ent_T, var_origin, origin);
-                set_entvar(ent_T, var_angles, angles);
-            }
+            ent = create_retake_spawn_spot(origin, angles, TEAM_TERRORIST);
+            if (!is_nullent(ent))
+                g_lastRetakeSpawnT = ent;
         }
         else if (equali(team, "CT"))
         {
-            if (type == 1)
-                ent_CT = create_entity("info_player_start");
-            else
-                ent_CT = find_ent_by_class(ent_CT, "info_player_start");
-
-            if (ent_CT > 0)
-            {
-                set_entvar(ent_CT, var_iuser1, 1);
-                set_entvar(ent_CT, var_origin, origin);
-                set_entvar(ent_CT, var_angles, angles);
-            }
+            ent = create_retake_spawn_spot(origin, angles, TEAM_CT);
+            if (!is_nullent(ent))
+                g_lastRetakeSpawnCT = ent;
         }
     }
     return 1;
 }
 
-public pfn_keyvalue(entid)
+stock remove_retake_spawn_spots()
+{
+    new ent = 0;
+    while ((ent = rg_find_ent_by_class(ent, CLASSNAME_RETAKES_SPAWN_T)))
+    {
+        if (!is_nullent(ent))
+        {
+            rg_remove_entity(ent);
+        }
+    }
+
+    ent = 0;
+    while ((ent = rg_find_ent_by_class(ent, CLASSNAME_RETAKES_SPAWN_CT)))
+    {
+        if (!is_nullent(ent))
+        {
+            rg_remove_entity(ent);
+        }
+    }
+}
+
+stock create_retake_spawn_spot(const Float:origin[3], const Float:angles[3], TeamName:team)
+{
+    new ent = rg_create_entity("info_target", true);
+    if (is_nullent(ent))
+    {
+        return NULLENT;
+    }
+
+    set_entvar(ent, var_origin, origin);
+    set_entvar(ent, var_angles, angles);
+    set_entvar(ent, var_v_angle, angles);
+    set_entvar(ent, var_classname, team == TEAM_CT ? CLASSNAME_RETAKES_SPAWN_CT : CLASSNAME_RETAKES_SPAWN_T);
+
+    return ent;
+}
+
+stock get_retake_spawn_spot(TeamName:team)
+{
+    new ent = 0;
+
+    if (team == TEAM_TERRORIST)
+    {
+        while ((ent = rg_find_ent_by_class(g_lastRetakeSpawnT, CLASSNAME_RETAKES_SPAWN_T)))
+        {
+            if (!is_nullent(ent))
+            {
+                g_lastRetakeSpawnT = ent;
+                return ent;
+            }
+        }
+
+        g_lastRetakeSpawnT = 0;
+        while ((ent = rg_find_ent_by_class(g_lastRetakeSpawnT, CLASSNAME_RETAKES_SPAWN_T)))
+        {
+            if (!is_nullent(ent))
+            {
+                g_lastRetakeSpawnT = ent;
+                return ent;
+            }
+        }
+    }
+    else if (team == TEAM_CT)
+    {
+        while ((ent = rg_find_ent_by_class(g_lastRetakeSpawnCT, CLASSNAME_RETAKES_SPAWN_CT)))
+        {
+            if (!is_nullent(ent))
+            {
+                g_lastRetakeSpawnCT = ent;
+                return ent;
+            }
+        }
+
+        g_lastRetakeSpawnCT = 0;
+        while ((ent = rg_find_ent_by_class(g_lastRetakeSpawnCT, CLASSNAME_RETAKES_SPAWN_CT)))
+        {
+            if (!is_nullent(ent))
+            {
+                g_lastRetakeSpawnCT = ent;
+                return ent;
+            }
+        }
+    }
+
+    return NULLENT;
+}
+
+public RG_CBasePlayer_EntSelectSpawnPoint_Pre(const this)
 {
     if (!is_retakes_enabled())
     {
-        return PLUGIN_CONTINUE;
+        return HC_CONTINUE;
     }
 
-    new classname[32], key[32], value[32];
-    copy_keyvalue(classname, 31, key, 31, value, 31);
-
-    if (equal(classname, "info_player_deathmatch") || equal(classname, "info_player_start"))
+    new TeamName:team = get_member(this, m_iTeam);
+    if (!(team == TEAM_CT || team == TEAM_TERRORIST))
     {
-        if (is_valid_ent(entid) && get_entvar(entid, var_iuser1) != 1)
-            remove_entity(entid);
+        return HC_CONTINUE;
     }
 
-    return PLUGIN_CONTINUE;
+    new ent = get_retake_spawn_spot(team);
+    if (is_nullent(ent))
+    {
+        return HC_CONTINUE;
+    }
+
+    SetHookChainReturn(ATYPE_INTEGER, ent);
+    return HC_SUPERCEDE;
 }
 
 public RG_CBasePlayer_Spawn_Post(const id)
@@ -707,31 +764,28 @@ public RG_CBasePlayer_Spawn_Post(const id)
         return HC_CONTINUE;
     }
 
-    if (g_startRetake)
+    if (task_exists(id))
     {
-        if (task_exists(id))
-        {
-            remove_task(id);
-        }
+        remove_task(id);
+    }
 
-        if (get_pcvar_num(g_cvarAutoPlant))
-        {
-            set_task(get_pcvar_float(g_cvarMpFreezetime), "task_c4_strip", id);
-        }
+    if (get_pcvar_num(g_cvarAutoPlant))
+    {
+        set_task(get_pcvar_float(g_cvarMpFreezetime), "task_c4_strip", id);
+    }
 
-        if (g_savePlayerData[id])
-        {
-            set_entvar(id, var_frags, g_ePlayerData[id][Player_Kills]);
-            set_member(id, m_iDeaths, g_ePlayerData[id][Player_Deaths]);
-            rg_add_account(id, g_ePlayerData[id][Player_Money], AS_SET);
-            g_savePlayerData[id] = false;
-        }
-        else
-        {
-            g_ePlayerData[id][Player_Kills] = get_user_frags(id);
-            g_ePlayerData[id][Player_Deaths] = get_user_deaths(id);
-            g_ePlayerData[id][Player_Money] = get_member(id, m_iAccount);
-        }
+    if (g_savePlayerData[id])
+    {
+        set_entvar(id, var_frags, g_ePlayerData[id][Player_Kills]);
+        set_member(id, m_iDeaths, g_ePlayerData[id][Player_Deaths]);
+        rg_add_account(id, g_ePlayerData[id][Player_Money], AS_SET);
+        g_savePlayerData[id] = false;
+    }
+    else
+    {
+        g_ePlayerData[id][Player_Kills] = get_user_frags(id);
+        g_ePlayerData[id][Player_Deaths] = get_user_deaths(id);
+        g_ePlayerData[id][Player_Money] = get_member(id, m_iAccount);
     }
 
     event_draw_buyzone_icon(id);
@@ -809,22 +863,19 @@ public log_msg_plant_bomb()
     if (get_pcvar_num(g_cvarAutoPlant))
         return;
 
-    if (g_startRetake)
+    new szLogUser[80], szName[32];
+    read_logargv(0, szLogUser, charsmax(szLogUser));
+    parse_loguser(szLogUser, szName, charsmax(szName));
+
+    new id = get_user_index(szName);
+
+    if (rg_has_item_by_name(id, "weapon_c4"))
     {
-        new szLogUser[80], szName[32];
-        read_logargv(0, szLogUser, charsmax(szLogUser));
-        parse_loguser(szLogUser, szName, charsmax(szName));
-
-        new id = get_user_index(szName);
-
-        if (rg_has_item_by_name(id, "weapon_c4"))
-        {
-            engclient_cmd(id, "weapon_c4");
-            client_print(id, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!");
-            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
-            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
-            ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
-        }
+        engclient_cmd(id, "weapon_c4");
+        client_print(id, print_center, "PLANT A BOMB!!!^rPLANT A BOMB!!!^rPLANT A BOMB!!!");
+        ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
+        ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
+        ClientPrintColor(id, "%s 快去下包！！！", g_prefix);
     }
 }
 
