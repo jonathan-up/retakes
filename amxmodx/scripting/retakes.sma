@@ -1,5 +1,6 @@
 #include <amxmodx>
 #include <amxmisc>
+#include <cvars>
 #include <engine>
 #include <reapi>
 
@@ -26,6 +27,8 @@ new g_cvarMpc4timer;
 new g_cvarNextMap;
 new g_cvarRestartRound;
 new g_cvarMpBuyTime;
+new g_cvarEnable;
+new cvarhook:g_hEnableCvarHook;
 
 new g_cvarTTwins;
 new g_cvarRounds;
@@ -64,6 +67,17 @@ new g_ePlayerData[33][PlayerData];
 new bool:g_savePlayerData[33];
 
 new g_msgStatusIcon;
+new MessageHook:g_hStatusIconMsgHook;
+
+new HookChain:g_hRoundEndHook;
+new HookChain:g_hRestartRoundHook;
+new HookChain:g_hRoundFreezeEndHook;
+new HookChain:g_hMakeBomberHook;
+new HookChain:g_hPlantBombHook;
+new HookChain:g_hDefuseBombEndHook;
+new HookChain:g_hExplodeBombHook;
+new HookChain:g_hPlayerSpawnHook;
+new HookChain:g_hDropPlayerItemHook;
 
 public plugin_precache()
 {
@@ -74,18 +88,20 @@ public plugin_init()
 {
     register_plugin(PLUGIN, VERSION, AUTHOR);
     register_cvar("retakes_version", VERSION, FCVAR_SERVER|FCVAR_UNLOGGED);
+    g_cvarEnable = register_cvar("retakes_enable", "1");
 
-    RegisterHookChain(RG_RoundEnd, "hook_round_end", .post = true);
-    RegisterHookChain(RG_CSGameRules_RestartRound, "hook_restart_round", .post = true);
-    RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_round_freeze_end", .post = true);
-    RegisterHookChain(RG_CBasePlayer_MakeBomber, "hook_make_bomber", .post = true);
-    RegisterHookChain(RG_PlantBomb, "hook_plant_bomb", .post = true);
-    RegisterHookChain(RG_CGrenade_DefuseBombEnd, "hook_defuse_bomb_end", .post = true);
-    RegisterHookChain(RG_CGrenade_ExplodeBomb, "hook_explode_bomb", .post = true);
-    RegisterMessage(get_user_msgid("StatusIcon"), "msg_status_icon", .post = false);
+    g_hRoundEndHook = RegisterHookChain(RG_RoundEnd, "hook_round_end", .post = true);
+    g_hRestartRoundHook = RegisterHookChain(RG_CSGameRules_RestartRound, "hook_restart_round", .post = true);
+    g_hRoundFreezeEndHook = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_round_freeze_end", .post = true);
+    g_hMakeBomberHook = RegisterHookChain(RG_CBasePlayer_MakeBomber, "hook_make_bomber", .post = true);
+    g_hPlantBombHook = RegisterHookChain(RG_PlantBomb, "hook_plant_bomb", .post = true);
+    g_hDefuseBombEndHook = RegisterHookChain(RG_CGrenade_DefuseBombEnd, "hook_defuse_bomb_end", .post = true);
+    g_hExplodeBombHook = RegisterHookChain(RG_CGrenade_ExplodeBomb, "hook_explode_bomb", .post = true);
+    g_hStatusIconMsgHook = RegisterMessage(get_user_msgid("StatusIcon"), "msg_status_icon", .post = false);
 
-    RegisterHookChain(RG_CBasePlayer_Spawn, "hook_player_spawn", .post = true);
-    RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "hook_drop_player_item", .post = false);
+    g_hPlayerSpawnHook = RegisterHookChain(RG_CBasePlayer_Spawn, "hook_player_spawn", .post = true);
+    g_hDropPlayerItemHook = RegisterHookChain(RG_CBasePlayer_DropPlayerItem, "hook_drop_player_item", .post = false);
+    g_hEnableCvarHook = hook_cvar_change(g_cvarEnable, "cvar_change_retakes_enable");
 
     g_msgStatusIcon = get_user_msgid("StatusIcon");
 
@@ -123,6 +139,18 @@ public plugin_init()
 
 public plugin_cfg()
 {
+    set_retakes_hooks_enabled(is_retakes_enabled());
+
+    if (!is_retakes_enabled())
+    {
+        g_startRetake = false;
+        g_isBombPlanted = false;
+        g_c4timer = -1;
+        remove_task(TASK_BOMB_TIMER);
+        remove_task(TASK_BOMB_NOT_PLANT);
+        return;
+    }
+
     set_pcvar_float(g_cvarMpRoundtime, 1.00);
     set_pcvar_num(g_cvarMpTimelimit, 0);
     set_pcvar_num(g_cvarMpLimitTeams, 5);
@@ -158,12 +186,62 @@ public plugin_natives()
 
 public native_is_retakes(plugin, params)
 {
-    return g_startRetake;
+    return is_retakes_enabled() && g_startRetake;
 }
 
 public native_rounds(plugin, params)
 {
     return g_round;
+}
+
+stock bool:is_retakes_enabled()
+{
+    return g_cvarEnable && get_pcvar_num(g_cvarEnable);
+}
+
+stock set_retakes_hooks_enabled(bool:enabled)
+{
+    if (enabled)
+    {
+        EnableHookChain(g_hRoundEndHook);
+        EnableHookChain(g_hRestartRoundHook);
+        EnableHookChain(g_hRoundFreezeEndHook);
+        EnableHookChain(g_hMakeBomberHook);
+        EnableHookChain(g_hPlantBombHook);
+        EnableHookChain(g_hDefuseBombEndHook);
+        EnableHookChain(g_hExplodeBombHook);
+        EnableHookChain(g_hPlayerSpawnHook);
+        EnableHookChain(g_hDropPlayerItemHook);
+        EnableHookMessage(g_hStatusIconMsgHook);
+    }
+    else
+    {
+        DisableHookChain(g_hRoundEndHook);
+        DisableHookChain(g_hRestartRoundHook);
+        DisableHookChain(g_hRoundFreezeEndHook);
+        DisableHookChain(g_hMakeBomberHook);
+        DisableHookChain(g_hPlantBombHook);
+        DisableHookChain(g_hDefuseBombEndHook);
+        DisableHookChain(g_hExplodeBombHook);
+        DisableHookChain(g_hPlayerSpawnHook);
+        DisableHookChain(g_hDropPlayerItemHook);
+        DisableHookMessage(g_hStatusIconMsgHook);
+    }
+}
+
+public cvar_change_retakes_enable(pcvar, const old_value[], const new_value[])
+{
+    new bool:enabled = str_to_num(new_value) != 0;
+    set_retakes_hooks_enabled(enabled);
+
+    if (!enabled)
+    {
+        g_startRetake = false;
+        g_isBombPlanted = false;
+        g_c4timer = -1;
+        remove_task(TASK_BOMB_TIMER);
+        remove_task(TASK_BOMB_NOT_PLANT);
+    }
 }
 
 public event_round_start()
@@ -254,6 +332,11 @@ public log_when_round_start()
 
 public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     switch (status)
     {
         case WINSTATUS_CTS:
@@ -283,18 +366,33 @@ public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDel
 
 public hook_restart_round()
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     event_round_start();
     return HC_CONTINUE;
 }
 
 public hook_round_freeze_end()
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     log_when_round_start();
     return HC_CONTINUE;
 }
 
 public hook_make_bomber(const player)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     if (get_pcvar_num(g_cvarAutoPlant))
     {
         return HC_CONTINUE;
@@ -319,12 +417,22 @@ public hook_make_bomber(const player)
 
 public hook_plant_bomb(const index, Float:vecStart[3], Float:vecVelocity[3])
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     log_bomb_planted();
     return HC_CONTINUE;
 }
 
 public hook_defuse_bomb_end(const this, const player, bool:bDefused)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     if (bDefused)
     {
         log_bomb_defused();
@@ -334,12 +442,22 @@ public hook_defuse_bomb_end(const this, const player, bool:bDefused)
 
 public hook_explode_bomb(const this, tracehandle, const bitsDamageType)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     log_bomb_explode();
     return HC_CONTINUE;
 }
 
 public task_info_hud()
 {
+    if (!is_retakes_enabled())
+    {
+        return;
+    }
+
     if (g_startRetake)
     {
         set_hudmessage(0, 212, 255, 0.57, 0.05, _, _, 1.0, _, _, 1);
@@ -349,6 +467,11 @@ public task_info_hud()
 
 public task_bomb_not_plant()
 {
+    if (!is_retakes_enabled())
+    {
+        return;
+    }
+
     if (!g_isBombPlanted)
     {
         set_pcvar_num(g_cvarRestartRound, 1);
@@ -362,6 +485,11 @@ public task_bomb_not_plant()
 
 public task_show_countdown()
 {
+    if (!is_retakes_enabled())
+    {
+        return;
+    }
+
     client_print(0, print_center, "Retake start for : %d", g_warmupTime--);
 
     if (g_warmupTime <= 0)
@@ -550,6 +678,11 @@ stock read_spawns(type)
 
 public pfn_keyvalue(entid)
 {
+    if (!is_retakes_enabled())
+    {
+        return PLUGIN_CONTINUE;
+    }
+
     new classname[32], key[32], value[32];
     copy_keyvalue(classname, 31, key, 31, value, 31);
 
@@ -564,6 +697,11 @@ public pfn_keyvalue(entid)
 
 public hook_player_spawn(const id)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     if (!is_user_alive(id))
     {
         return HC_CONTINUE;
@@ -622,6 +760,11 @@ public clcmd_fullupdate()
 
 public task_c4_strip(id)
 {
+    if (!is_retakes_enabled())
+    {
+        return;
+    }
+
     if (!is_user_alive(id))
     {
         return;
@@ -637,6 +780,11 @@ public task_c4_strip(id)
 
 public bomb_plant(player)
 {
+    if (!is_retakes_enabled())
+    {
+        return;
+    }
+
     new Float:origin[3];
     get_entvar(player, var_origin, origin);
     origin[0] += 30.0;
@@ -740,6 +888,14 @@ public client_command(client)
     return PLUGIN_CONTINUE;
 }
 
+public plugin_end()
+{
+    if (g_hEnableCvarHook)
+    {
+        disable_cvar_hook(g_hEnableCvarHook);
+    }
+}
+
 public client_disconnected(id)
 {
     if (task_exists(id))
@@ -750,6 +906,11 @@ public client_disconnected(id)
 
 public hook_drop_player_item(const this, const pszItemName[])
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     if (equali(pszItemName, "weapon_c4"))
     {
         SetHookChainReturn(ATYPE_EDICT, 0);
@@ -771,6 +932,11 @@ public unlock_buyzone()
 
 public msg_status_icon(msg_id, msg_dest, msg_entity)
 {
+    if (!is_retakes_enabled())
+    {
+        return HC_CONTINUE;
+    }
+
     if (get_pcvar_num(g_cvarBuyZone) == 0)
     {
         static szIcon[8];
